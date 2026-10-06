@@ -128,16 +128,24 @@ class VpnTunnelService : VpnService() {
             if (TProxyService.TProxyIsRunning()) TProxyService.TProxyStopService()
         } catch (_: Throwable) {
         }
+        // Let the native engine finish before its TUN fd is closed, otherwise
+        // it can crash the whole process while reading a closed descriptor.
+        try {
+            engineThread?.join(2_000)
+        } catch (_: InterruptedException) {
+        }
+        engineThread = null
         try {
             tunFd?.close()
         } catch (_: Exception) {
         }
         tunFd = null
-        engineThread?.interrupt()
-        engineThread = null
         configFile?.delete()
         configFile = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Throwable) {
+        }
     }
 
     override fun onRevoke() {
@@ -153,7 +161,7 @@ class VpnTunnelService : VpnService() {
     private fun startForegroundCompat() {
         createChannel()
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_linkbridge)
+            .setSmallIcon(R.drawable.ic_stat_linkbridge)
             .setContentTitle("LinkBridge")
             .setContentText("Connexion Internet reçue")
             .setOngoing(true)

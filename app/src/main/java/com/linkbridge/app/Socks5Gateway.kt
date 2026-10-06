@@ -17,6 +17,7 @@ import java.net.SocketException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -50,7 +51,11 @@ class Socks5Gateway(
                             bind(InetSocketAddress(InetAddress.getByName(bindHost), port))
                         }
                     } catch (_: IOException) {
-                        Thread.sleep(250)
+                        try {
+                            Thread.sleep(250)
+                        } catch (_: InterruptedException) {
+                            return@thread
+                        }
                     }
                 }
                 while (running.get()) {
@@ -59,9 +64,18 @@ class Socks5Gateway(
                     } catch (_: SocketException) {
                         null
                     }
-                    if (client != null) workers.execute { handleClient(client) }
+                    if (client != null) {
+                        try {
+                            workers.execute { handleClient(client) }
+                        } catch (_: RejectedExecutionException) {
+                            try {
+                                client.close()
+                            } catch (_: IOException) {
+                            }
+                        }
+                    }
                 }
-            } catch (_: IOException) {
+            } catch (_: Throwable) {
                 running.set(false)
             }
         }
@@ -79,6 +93,15 @@ class Socks5Gateway(
     }
 
     private fun handleClient(client: Socket) {
+        try {
+            handleClientUnsafe(client)
+        } catch (_: Throwable) {
+            // Client disconnects (EOF, reset) and shutdown interrupts are
+            // normal; they must never crash the app from a worker thread.
+        }
+    }
+
+    private fun handleClientUnsafe(client: Socket) {
         client.use { socket ->
             socket.soTimeout = 30_000
             val input = DataInputStream(BufferedInputStream(socket.getInputStream()))

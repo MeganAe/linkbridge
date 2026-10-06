@@ -19,9 +19,9 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_linkbridge"
+        android:icon="@mipmap/ic_launcher"
         android:label="LinkBridge"
-        android:roundIcon="@drawable/ic_linkbridge"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LinkBridge">
 

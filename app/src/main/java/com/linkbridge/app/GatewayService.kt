@@ -67,7 +67,7 @@ class GatewayService : Service() {
     private fun notification(): Notification {
         createChannel()
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_linkbridge)
+            .setSmallIcon(R.drawable.ic_stat_linkbridge)
             .setContentTitle("LinkBridge")
             .setContentText("Partage Internet actif")
             .setOngoing(true)

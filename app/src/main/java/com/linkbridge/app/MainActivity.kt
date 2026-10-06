@@ -10,9 +10,11 @@ import android.net.wifi.p2p.WifiP2pInfo
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,6 +58,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -62,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -253,10 +258,16 @@ private fun LinkBridgeApp(
         extraLarge = RoundedCornerShape(36.dp)
     )
 
+    var showAbout by remember { mutableStateOf(false) }
+    // Back returns to the role menu (and stops sharing/receiving) instead of
+    // closing the app. From the menu itself, back exits normally.
+    BackHandler(enabled = role != null) { onStop() }
+
     MaterialTheme(
         colorScheme = colors,
         shapes = expressiveShapes
     ) {
+        if (showAbout) AboutDialog(onDismiss = { showAbout = false })
         Scaffold(
             containerColor = LinkBridgeBrand.Background,
             topBar = {
@@ -269,7 +280,7 @@ private fun LinkBridgeApp(
                         }
                     },
                     actions = {
-                        IconButton(onClick = {}) {
+                        IconButton(onClick = { showAbout = true }) {
                             Icon(Icons.Outlined.Info, contentDescription = "À propos")
                         }
                     }
@@ -485,16 +496,34 @@ private fun TrustPanel() {
 
 @Composable
 private fun LinkBridgeMark(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(LinkBridgeBrand.Ink),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(11.dp).height(22.dp).clip(RoundedCornerShape(8.dp)).background(LinkBridgeBrand.Mint))
-            Spacer(Modifier.width(2.dp))
-            Box(Modifier.width(11.dp).height(22.dp).clip(RoundedCornerShape(8.dp)).background(LinkBridgeBrand.Coral))
+    Image(
+        painter = painterResource(R.drawable.ic_linkbridge),
+        contentDescription = "LinkBridge",
+        modifier = modifier.clip(CircleShape)
+    )
+}
+
+@Composable
+private fun AboutDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+        title = { Text("LinkBridge ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                Text("Partage la connexion Internet d'un téléphone vers un autre via Wi‑Fi Direct, sans hotspot classique.")
+                Text("Téléphone A (qui a Internet)", fontWeight = FontWeight.Bold)
+                Text("Appuie sur « Partager » et communique le code à 6 chiffres affiché.")
+                Text("Téléphone B (qui reçoit)", fontWeight = FontWeight.Bold)
+                Text("Appuie sur « Recevoir », autorise le VPN, entre le code, puis choisis le téléphone A dans la liste.")
+                Text(
+                    "Android affiche une icône VPN et une notification pendant la connexion. Le bouton retour arrête le lien et revient à l'accueil.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
-    }
+    )
 }
