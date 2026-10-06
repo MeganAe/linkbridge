@@ -40,8 +40,9 @@ class Socks5GatewayTest {
                 assertEquals(2, input.readUnsignedByte())
 
                 output.writeByte(1)
-                output.writeByte(9)
-                output.write("linkbridge".toByteArray())
+                val username = "linkbridge".toByteArray()
+                output.writeByte(username.size)
+                output.write(username)
                 output.writeByte(6)
                 output.write("123456".toByteArray())
                 output.flush()
