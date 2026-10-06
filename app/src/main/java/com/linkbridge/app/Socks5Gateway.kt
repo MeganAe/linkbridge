@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -122,7 +123,7 @@ class Socks5Gateway(
 
             when (command) {
                 CMD_CONNECT -> handleConnect(socket, input, output, target)
-                CMD_UDP_ASSOCIATE -> handleUdpAssociate(socket, output)
+                CMD_UDP_ASSOCIATE -> handleUdpAssociate(socket, input, output)
                 else -> writeReply(output, REP_COMMAND_NOT_SUPPORTED, null, 0)
             }
         }
@@ -175,13 +176,20 @@ class Socks5Gateway(
         upstream.use { remote ->
             writeReply(output, REP_SUCCEEDED, remote.localAddress, remote.localPort)
             output.flush()
-            relay(client, remote)
+            // The uplink must read through the buffered handshake stream: it
+            // can already hold payload bytes the client pipelined behind the
+            // request. Reading the raw socket stream would drop them.
+            relay(input, client, remote)
         }
     }
 
-    private fun relay(client: Socket, remote: Socket) {
+    private fun relay(input: InputStream, client: Socket, remote: Socket) {
         val forward = thread(name = "linkbridge-socks-up", start = true) {
-            copyAndClose(client, remote)
+            try {
+                input.copyTo(remote.getOutputStream())
+                remote.shutdownOutput()
+            } catch (_: IOException) {
+            }
         }
         try {
             remote.getInputStream().copyTo(client.getOutputStream())
@@ -195,74 +203,118 @@ class Socks5Gateway(
         }
     }
 
-    private fun copyAndClose(source: Socket, destination: Socket) {
-        try {
-            source.getInputStream().copyTo(destination.getOutputStream())
-            destination.shutdownOutput()
-        } catch (_: IOException) {
-        }
-    }
-
-    private fun handleUdpAssociate(control: Socket, output: DataOutputStream) {
+    private fun handleUdpAssociate(control: Socket, input: DataInputStream, output: DataOutputStream) {
         val udp = try {
             DatagramSocket(null).apply {
                 reuseAddress = true
-                bind(InetSocketAddress(0))
+                // Match the TCP server: expose the relay only on the private
+                // Wi-Fi Direct interface, never on the phone's other networks.
+                bind(InetSocketAddress(InetAddress.getByName(bindHost), 0))
                 soTimeout = 1_000
             }
-        } catch (_: SocketException) {
+        } catch (_: IOException) {
             writeReply(output, REP_GENERAL_FAILURE, null, 0)
             return
         }
 
-        udp.use { datagramSocket ->
-            writeReply(output, REP_SUCCEEDED, InetAddress.getByName(advertisedHost), datagramSocket.localPort)
-            output.flush()
-
-            val clientAddress = control.inetAddress ?: return
-            val routes = ConcurrentHashMap<String, InetSocketAddress>()
-            val buffer = ByteArray(65_535)
-
-            while (!control.isClosed && running.get()) {
-                val packet = DatagramPacket(buffer, buffer.size)
+        // The relay lives only as long as its control TCP connection. A
+        // watchdog reads that connection so a client that disappears without
+        // closing cleanly still tears the relay down.
+        val watchdog = thread(name = "linkbridge-socks-udp-watch", start = true) {
+            try {
+                val sink = ByteArray(512)
+                while (input.read(sink) != -1) {
+                    // Ignore unexpected bytes on the control channel.
+                }
+            } catch (_: IOException) {
+            } finally {
                 try {
-                    datagramSocket.receive(packet)
-                } catch (_: java.net.SocketTimeoutException) {
-                    continue
-                } catch (_: IOException) {
-                    break
+                    udp.close()
+                } catch (_: Exception) {
                 }
+            }
+        }
 
-                if (packet.address.hostAddress == clientAddress.hostAddress) {
-                    val request = parseUdpRequest(packet.data, packet.offset, packet.length) ?: continue
-                    val resolved = try {
-                        InetAddress.getAllByName(request.address.host).firstOrNull()
-                    } catch (_: IOException) {
-                        null
-                    } ?: continue
+        try {
+            udp.use { datagramSocket ->
+                writeReply(output, REP_SUCCEEDED, InetAddress.getByName(advertisedHost), datagramSocket.localPort)
+                output.flush()
 
-                    val destination = InetSocketAddress(resolved, request.address.port)
-                    routes[endpointKey(resolved, request.address.port)] =
-                        InetSocketAddress(packet.address, packet.port)
-                    val payload = DatagramPacket(
-                        request.payload,
-                        request.payload.size,
-                        destination.address,
-                        destination.port
-                    )
+                val clientAddress = control.inetAddress ?: return
+                val routes = ConcurrentHashMap<String, RouteEntry>()
+                val buffer = ByteArray(65_535)
+                var clientUdpKey: String? = null
+
+                while (!control.isClosed && running.get()) {
+                    val packet = DatagramPacket(buffer, buffer.size)
                     try {
-                        datagramSocket.send(payload)
+                        datagramSocket.receive(packet)
+                    } catch (_: java.net.SocketTimeoutException) {
+                        purgeExpiredRoutes(routes)
+                        continue
                     } catch (_: IOException) {
+                        break
                     }
-                } else {
-                    val destination = routes[endpointKey(packet.address, packet.port)] ?: continue
-                    val response = buildUdpResponse(packet.address, packet.port, packet.data, packet.offset, packet.length)
-                    val reply = DatagramPacket(response, response.size, destination.address, destination.port)
-                    try {
-                        datagramSocket.send(reply)
-                    } catch (_: IOException) {
+
+                    // Requests come from the client's UDP socket; anything
+                    // else is a reply from a destination we forwarded to.
+                    // The first datagram pins the client endpoint so a
+                    // destination sharing the client's address (loopback in
+                    // tests, hairpin cases) is still classified correctly.
+                    val sourceKey = endpointKey(packet.address, packet.port)
+                    val fromClient = if (clientUdpKey != null) {
+                        sourceKey == clientUdpKey
+                    } else {
+                        packet.address.hostAddress == clientAddress.hostAddress
+                    }
+
+                    if (fromClient) {
+                        clientUdpKey = sourceKey
+                        val request = parseUdpRequest(packet.data, packet.offset, packet.length) ?: continue
+                        val resolved = try {
+                            InetAddress.getAllByName(request.address.host).firstOrNull()
+                        } catch (_: IOException) {
+                            null
+                        } ?: continue
+
+                        val destination = InetSocketAddress(resolved, request.address.port)
+                        rememberRoute(
+                            routes,
+                            endpointKey(resolved, request.address.port),
+                            RouteEntry(InetSocketAddress(packet.address, packet.port))
+                        )
+                        val payload = DatagramPacket(
+                            request.payload,
+                            request.payload.size,
+                            destination.address,
+                            destination.port
+                        )
+                        try {
+                            datagramSocket.send(payload)
+                        } catch (_: IOException) {
+                        }
+                    } else {
+                        val route = routes[endpointKey(packet.address, packet.port)] ?: continue
+                        route.lastSeen = System.currentTimeMillis()
+                        val response = buildUdpResponse(packet.address, packet.port, packet.data, packet.offset, packet.length)
+                        val reply = DatagramPacket(response, response.size, route.client.address, route.client.port)
+                        try {
+                            datagramSocket.send(reply)
+                        } catch (_: IOException) {
+                        }
                     }
                 }
+            }
+        } finally {
+            // Unblock the watchdog when the relay ends first.
+            try {
+                control.close()
+            } catch (_: IOException) {
+            }
+            try {
+                watchdog.join(2_000)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
             }
         }
     }
@@ -348,10 +400,33 @@ class Socks5Gateway(
     private fun endpointKey(address: InetAddress, port: Int): String =
         "${address.hostAddress}:$port"
 
+    private fun rememberRoute(
+        routes: ConcurrentHashMap<String, RouteEntry>,
+        key: String,
+        entry: RouteEntry
+    ) {
+        if (routes.size >= MAX_UDP_ROUTES) {
+            val oldest = routes.entries.minByOrNull { it.value.lastSeen }
+            if (oldest != null) routes.remove(oldest.key)
+        }
+        routes[key] = entry
+    }
+
+    private fun purgeExpiredRoutes(routes: ConcurrentHashMap<String, RouteEntry>) {
+        val now = System.currentTimeMillis()
+        routes.entries.removeIf { now - it.value.lastSeen > UDP_ROUTE_TTL_MS }
+    }
+
     private fun ByteArray.contains(value: Byte): Boolean = any { it == value }
 
     private data class SocksAddress(val host: String, val port: Int)
     private data class UdpRequest(val address: SocksAddress, val payload: ByteArray)
+
+    /** Where to send a UDP reply back to the client, plus idle tracking. */
+    private class RouteEntry(val client: InetSocketAddress) {
+        @Volatile
+        var lastSeen: Long = System.currentTimeMillis()
+    }
 
     companion object {
         const val DEFAULT_PORT = 39_876
@@ -371,5 +446,7 @@ class Socks5Gateway(
         private const val REP_COMMAND_NOT_SUPPORTED = 7
         private const val REP_ADDRESS_TYPE_NOT_SUPPORTED = 8
         private const val CONNECT_TIMEOUT_MS = 15_000
+        private const val UDP_ROUTE_TTL_MS = 60_000L
+        private const val MAX_UDP_ROUTES = 256
     }
 }
