@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">LinkBridge mark</title>
+  <desc id="desc">Two rounded bridge pillars, mint and coral, connected by a white path on an ink background.</desc>
+  <rect width="256" height="256" rx="64" fill="#251A46"/>
+  <path d="M67 67h42v25H67a27 27 0 0 0 0 54h42v25H67a52 52 0 0 1 0-104Z" fill="#C7F7E8"/>
+  <path d="M147 67h42a52 52 0 0 1 0 104h-42v-25h42a27 27 0 0 0 0-54h-42V67Z" fill="#FF7657"/>
+  <path d="M93 113h70v30H93z" fill="#fff"/>
+</svg>

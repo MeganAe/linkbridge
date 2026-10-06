@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" role="img" aria-labelledby="title desc">
+  <title id="title">LinkBridge wordmark</title>
+  <desc id="desc">LinkBridge wordmark using the brand mark and a dark ink wordmark.</desc>
+  <rect width="180" height="180" rx="48" fill="#251A46"/>
+  <path d="M48 47h30v18H48a19 19 0 0 0 0 38h30v18H48a37 37 0 0 1 0-74Z" fill="#C7F7E8"/>
+  <path d="M102 47h30a37 37 0 0 1 0 74h-30v-18h30a19 19 0 0 0 0-38h-30V47Z" fill="#FF7657"/>
+  <path d="M66 80h48v20H66z" fill="#fff"/>
+  <text x="220" y="115" font-family="sans-serif" font-size="82" font-weight="700" fill="#251A46">LinkBridge</text>
+</svg>
