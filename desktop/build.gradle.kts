@@ -25,7 +25,7 @@ compose.desktop {
         mainClass = "com.linkbridge.app.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Msi)
             packageName = "LinkBridge"
             packageVersion = appVersion
             description = "Un pont, pas un hotspot."
