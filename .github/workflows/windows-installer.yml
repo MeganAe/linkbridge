@@ -1,0 +1,88 @@
+name: Installateur Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version de l'application (ex. 0.3.0)"
+        required: true
+        default: "0.3.0"
+  # Permet de valider la chaîne de build sur chaque PR sans publier de release.
+  pull_request:
+
+jobs:
+  build:
+    name: Construire l'installateur
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Déterminer la version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="${{ github.event.inputs.version || '0.3.0' }}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Version : $V"
+
+      - name: Exécuter les tests du module core
+        run: gradle --no-daemon --max-workers=2 :core:test
+
+      - name: Construire l'app-image avec jpackage
+        run: gradle --no-daemon --max-workers=2 :desktop:createDistributable -PappVersion=${{ steps.version.outputs.version }}
+
+      - name: Installer Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compiler l'installateur
+        shell: pwsh
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe introuvable après installation de Inno Setup" }
+          & $iscc /DAppVersion=${{ steps.version.outputs.version }} installer\linkbridge.iss
+          if ($LASTEXITCODE -ne 0) { throw "La compilation de l'installateur a échoué" }
+
+      - name: Publier l'installateur en artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinkBridge-Setup-${{ steps.version.outputs.version }}
+          path: dist/LinkBridge-Setup-${{ steps.version.outputs.version }}.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publier la GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $asset = "dist/LinkBridge-Setup-${{ steps.version.outputs.version }}.exe"
+          gh release create "${{ github.ref_name }}" $asset --title "LinkBridge ${{ github.ref_name }}" --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+            gh release upload "${{ github.ref_name }}" $asset --clobber
+          }

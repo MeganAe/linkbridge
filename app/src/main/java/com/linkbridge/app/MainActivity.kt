@@ -84,16 +84,38 @@ class MainActivity : ComponentActivity() {
     private var pairingInput by mutableStateOf("")
     private var vpnPrepared = false
     private var pendingPermissionAction: (() -> Unit)? = null
-    private lateinit var pairingCode: String
+
+    // A fresh pairing code is generated for every sharing session and is
+    // never persisted on the device.
+    private var pairingCode by mutableStateOf(PairingCode.generate())
     private lateinit var wifiDirect: WifiDirectController
+
+    // Connexion manuelle (relais sur le réseau local, ex. un PC) : IP + code.
+    private var manualIp by mutableStateOf("")
+    private var manualCode by mutableStateOf("")
+
+    // Groupe Wi-Fi Direct (SSID / mot de passe) affiché pour qu'un PC puisse
+    // rejoindre le réseau DIRECT-xx-… depuis ses réglages Wi-Fi.
+    private var groupSsid by mutableStateOf<String?>(null)
+    private var groupPassphrase by mutableStateOf<String?>(null)
+
+    // Host en attente du consentement VPN avant de démarrer le tunnel.
+    private var pendingManual: Pair<String, String>? = null
 
     private val vpnLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             vpnPrepared = true
-            status = "VPN autorisé. Choisis le téléphone A."
-            wifiDirect.startReceiver()
+            val manual = pendingManual
+            pendingManual = null
+            if (manual != null) {
+                status = "VPN autorisé. Connexion au relais ${manual.first}…"
+                startReceiverVpn(manual.first, manual.second)
+            } else {
+                status = "VPN autorisé. Choisis le téléphone A."
+                wifiDirect.startReceiver()
+            }
         } else {
             status = "Autorisation VPN refusée"
         }
@@ -110,12 +132,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pairingCode = PairingCode.getOrCreate(this)
         wifiDirect = WifiDirectController(
             context = this,
             onStatus = { status = it },
             onPeers = { peers = it },
-            onConnectionInfo = ::onConnectionInfo
+            onConnectionInfo = ::onConnectionInfo,
+            onGroupInfo = { ssid, passphrase ->
+                groupSsid = ssid
+                groupPassphrase = passphrase
+            }
         )
         wifiDirect.register()
 
@@ -126,6 +151,13 @@ class MainActivity : ComponentActivity() {
                 pairingCode = pairingCode,
                 pairingInput = pairingInput,
                 peers = peers,
+                manualIp = manualIp,
+                manualCode = manualCode,
+                groupSsid = groupSsid,
+                groupPassphrase = groupPassphrase,
+                onManualIpChange = { manualIp = it.filter { character -> !character.isWhitespace() } },
+                onManualCodeChange = { manualCode = it.filter { character -> character.isDigit() }.take(6) },
+                onManualConnect = { host, code -> beginManualReceiving(host, code) },
                 onPairingInputChange = { pairingInput = it.filter { character -> character.isDigit() }.take(6) },
                 onShare = { runWithNearbyPermissions(::beginSharing) },
                 onReceive = { runWithNearbyPermissions(::beginReceiving) },
@@ -147,13 +179,14 @@ class MainActivity : ComponentActivity() {
             }
             role == LinkRole.RECEIVE && !info.isGroupOwner && vpnPrepared -> {
                 status = "Téléphone A connecté. Démarrage du VPN…"
-                startReceiverVpn(host)
+                startReceiverVpn(host, pairingInput)
             }
         }
     }
 
     private fun beginSharing() {
         role = LinkRole.SHARE
+        pairingCode = PairingCode.generate()
         peers = emptyList()
         status = "Création du lien privé…"
         startGateway(GatewayService.DEFAULT_GROUP_OWNER_ADDRESS)
@@ -182,23 +215,49 @@ class MainActivity : ComponentActivity() {
         else startService(intent)
     }
 
-    private fun startReceiverVpn(host: String) {
-        if (pairingInput.length != 6) {
+    private fun startReceiverVpn(host: String, code: String) {
+        if (code.length != 6) {
             status = "Entre le code affiché sur le téléphone A"
             return
         }
         val intent = Intent(this, VpnTunnelService::class.java)
             .setAction(VpnTunnelService.ACTION_START)
             .putExtra(VpnTunnelService.EXTRA_GATEWAY_HOST, host)
-            .putExtra(VpnTunnelService.EXTRA_CODE, pairingInput)
+            .putExtra(VpnTunnelService.EXTRA_CODE, code)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(this, intent)
         else startService(intent)
+    }
+
+    /**
+     * Connexion manuelle à un relais sur le réseau local (par exemple le PC
+     * avec LinkBridge), sans Wi-Fi Direct : IP + code suffisent.
+     */
+    private fun beginManualReceiving(host: String, code: String) {
+        role = LinkRole.RECEIVE
+        val cleanHost = host.trim()
+        if (cleanHost.isEmpty() || code.length != 6) {
+            status = "Entre l'adresse du relais et le code à 6 chiffres"
+            return
+        }
+        val intent = VpnService.prepare(this)
+        if (intent != null) {
+            status = "Autorise LinkBridge à créer la connexion VPN"
+            pendingManual = cleanHost to code
+            vpnLauncher.launch(intent)
+        } else {
+            vpnPrepared = true
+            status = "Connexion au relais $cleanHost…"
+            startReceiverVpn(cleanHost, code)
+        }
     }
 
     private fun stopEverything() {
         wifiDirect.stop()
         stopService(Intent(this, GatewayService::class.java))
         stopService(Intent(this, VpnTunnelService::class.java).setAction(VpnTunnelService.ACTION_STOP))
+        pendingManual = null
+        groupSsid = null
+        groupPassphrase = null
         role = null
         peers = emptyList()
         status = "Prêt à créer un lien"
@@ -234,6 +293,13 @@ private fun LinkBridgeApp(
     pairingCode: String,
     pairingInput: String,
     peers: List<WifiP2pDevice>,
+    manualIp: String,
+    manualCode: String,
+    groupSsid: String?,
+    groupPassphrase: String?,
+    onManualIpChange: (String) -> Unit,
+    onManualCodeChange: (String) -> Unit,
+    onManualConnect: (host: String, code: String) -> Unit,
     onPairingInputChange: (String) -> Unit,
     onShare: () -> Unit,
     onReceive: () -> Unit,
@@ -322,7 +388,12 @@ private fun LinkBridgeApp(
                 }
 
                 AnimatedVisibility(role == LinkRole.SHARE) {
-                    SharePanel(pairingCode = pairingCode, onStop = onStop)
+                    SharePanel(
+                        pairingCode = pairingCode,
+                        groupSsid = groupSsid,
+                        groupPassphrase = groupPassphrase,
+                        onStop = onStop
+                    )
                 }
 
                 AnimatedVisibility(role == LinkRole.RECEIVE) {
@@ -331,6 +402,11 @@ private fun LinkBridgeApp(
                         onPairingInputChange = onPairingInputChange,
                         peers = peers,
                         onPeerSelected = onPeerSelected,
+                        manualIp = manualIp,
+                        manualCode = manualCode,
+                        onManualIpChange = onManualIpChange,
+                        onManualCodeChange = onManualCodeChange,
+                        onManualConnect = onManualConnect,
                         onStop = onStop
                     )
                 }
@@ -411,7 +487,12 @@ private fun RoleCard(
 }
 
 @Composable
-private fun SharePanel(pairingCode: String, onStop: () -> Unit) {
+private fun SharePanel(
+    pairingCode: String,
+    groupSsid: String?,
+    groupPassphrase: String?,
+    onStop: () -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Code de liaison", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Butter)) {
@@ -425,6 +506,28 @@ private fun SharePanel(pairingCode: String, onStop: () -> Unit) {
                     letterSpacing = 5.sp
                 )
                 AssistChip(onClick = {}, label = { Text("Wi‑Fi Direct privé") }, leadingIcon = { Icon(Icons.Outlined.Link, null) })
+            }
+        }
+        if (groupSsid != null) {
+            Text("Accès PC sur ce réseau", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Mint)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Un ordinateur peut rejoindre ce réseau Wi‑Fi, puis utiliser le relais " +
+                            "avec LinkBridge PC (IP " + GatewayService.DEFAULT_GROUP_OWNER_ADDRESS +
+                            ", port " + Socks5Gateway.DEFAULT_PORT + ") et le code ci-dessus.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text("Réseau : $groupSsid", fontWeight = FontWeight.Bold)
+                    if (groupPassphrase != null) {
+                        Text("Mot de passe : $groupPassphrase", fontWeight = FontWeight.Bold)
+                    } else {
+                        Text(
+                            "Mot de passe non disponible sur cet appareil.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         }
         OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
@@ -441,6 +544,11 @@ private fun ReceivePanel(
     onPairingInputChange: (String) -> Unit,
     peers: List<WifiP2pDevice>,
     onPeerSelected: (WifiP2pDevice) -> Unit,
+    manualIp: String,
+    manualCode: String,
+    onManualIpChange: (String) -> Unit,
+    onManualCodeChange: (String) -> Unit,
+    onManualConnect: (host: String, code: String) -> Unit,
     onStop: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -473,6 +581,34 @@ private fun ReceivePanel(
                 }
             }
         }
+        Text("Connexion manuelle (réseau local)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "Pour un relais sans Wi‑Fi Direct : un PC ou un téléphone A sur le même réseau.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        OutlinedTextField(
+            value = manualIp,
+            onValueChange = onManualIpChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Adresse du relais") },
+            supportingText = { Text("Ex. 192.168.1.10") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+        )
+        OutlinedTextField(
+            value = manualCode,
+            onValueChange = onManualCodeChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Code du relais") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+        Button(
+            onClick = { onManualConnect(manualIp, manualCode) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Ink)
+        ) { Text("Se connecter au relais") }
+
         OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Annuler") }
     }
 }

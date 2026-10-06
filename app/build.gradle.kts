@@ -56,6 +56,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
 
     implementation("androidx.core:core-ktx:1.16.0")
+    implementation(project(":core"))
     implementation(files("libs/hev-socks5-tunnel.aar"))
 
     testImplementation("junit:junit:4.13.2")
