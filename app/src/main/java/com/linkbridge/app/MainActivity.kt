@@ -84,7 +84,10 @@ class MainActivity : ComponentActivity() {
     private var pairingInput by mutableStateOf("")
     private var vpnPrepared = false
     private var pendingPermissionAction: (() -> Unit)? = null
-    private lateinit var pairingCode: String
+
+    // A fresh pairing code is generated for every sharing session and is
+    // never persisted on the device.
+    private var pairingCode by mutableStateOf(PairingCode.generate())
     private lateinit var wifiDirect: WifiDirectController
 
     private val vpnLauncher = registerForActivityResult(
@@ -110,7 +113,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pairingCode = PairingCode.getOrCreate(this)
         wifiDirect = WifiDirectController(
             context = this,
             onStatus = { status = it },
@@ -154,6 +156,7 @@ class MainActivity : ComponentActivity() {
 
     private fun beginSharing() {
         role = LinkRole.SHARE
+        pairingCode = PairingCode.generate()
         peers = emptyList()
         status = "Création du lien privé…"
         startGateway(GatewayService.DEFAULT_GROUP_OWNER_ADDRESS)

@@ -31,11 +31,12 @@ Le serveur :
 
 - exige la méthode SOCKS5 username/password ;
 - utilise `linkbridge` comme nom d'utilisateur ;
-- utilise le code de six chiffres comme mot de passe ;
+- utilise le code de six chiffres de la session comme mot de passe (nouveau code à chaque session, jamais enregistré sur le téléphone) ;
 - prend en charge `CONNECT` pour TCP ;
 - prend en charge `UDP ASSOCIATE` pour DNS, QUIC et les applications UDP ;
 - ouvre les sockets sortantes avec la connexion Internet normale de A ;
-- se lie à l'adresse IP du groupe Wi‑Fi Direct, pas à toutes les interfaces du téléphone ;
+- se lie à l'adresse IP du groupe Wi‑Fi Direct, pour le TCP comme pour le relais UDP, pas à toutes les interfaces du téléphone ;
+- ferme le relais UDP quand la connexion de contrôle disparaît et fait expirer les routes UDP inactives ;
 - ne publie pas le port sur un serveur ou sur Internet.
 
 ## Téléphone B
