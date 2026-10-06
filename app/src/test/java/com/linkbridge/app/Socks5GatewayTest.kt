@@ -16,7 +16,7 @@ class Socks5GatewayTest {
         val upstreamThread = thread(start = true) {
             upstream.accept().use { socket ->
                 val data = ByteArray(5)
-                socket.getInputStream().readFully(data)
+                DataInputStream(socket.getInputStream()).readFully(data)
                 socket.getOutputStream().write(data)
                 socket.getOutputStream().flush()
             }
