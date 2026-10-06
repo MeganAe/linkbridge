@@ -46,7 +46,7 @@ class Socks5GatewayTest {
                 output.writeByte(6)
                 output.write("123456".toByteArray())
                 output.flush()
-                assertEquals(0, input.readUnsignedByte())
+                assertEquals(1, input.readUnsignedByte())
                 assertEquals(0, input.readUnsignedByte())
 
                 output.writeByte(5)
