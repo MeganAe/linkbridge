@@ -6,9 +6,17 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-// Version embarquée dans l'installateur (jpackage exige x.y.z). Elle peut être
-// forcée par -PappVersion=0.3.0, par exemple depuis le workflow de release.
-val appVersion = providers.gradleProperty("appVersion").getOrElse("0.3.0")
+// Version de l'application, format jpackage/MSI : MAJOR.MINOR.BUILD (ex. 0.3.0).
+// Forçable avec -PappVersion=0.3.0 depuis la CI.
+val appVersion: String = providers.gradleProperty("appVersion")
+    .getOrElse("0.3.0")
+    .trim()
+    .removePrefix("v")
+    .substringBefore("-")
+    .let { if (Regex("""\d+\.\d+\.\d+""").matches(it)) it else "0.3.0" }
+
+// La version du projet sert de repli à plusieurs endroits de la DSL jpackage.
+version = appVersion
 
 kotlin {
     jvmToolchain(17)
@@ -25,6 +33,8 @@ compose.desktop {
         mainClass = "com.linkbridge.app.MainKt"
 
         nativeDistributions {
+            // L'installateur .exe est produit par Inno Setup (installer/linkbridge.iss),
+            // pas par jpackage : on ne demande que le format MSI à jpackage.
             targetFormats(TargetFormat.Msi)
             packageName = "LinkBridge"
             packageVersion = appVersion
@@ -33,12 +43,19 @@ compose.desktop {
             vendor = "LinkBridge"
 
             windows {
+                // Version explicite au niveau Windows ET MSI : évite la dérivation
+                // qui produisait '0' (MSI exige MAJOR.MINOR.BUILD).
+                packageVersion = appVersion
+                msiPackageVersion = appVersion
                 menu = true
                 shortcut = true
                 dirChooser = true
                 // Installation par utilisateur, sans droits administrateur.
                 perUserInstall = true
-                iconFile.set(rootProject.file("installer/linkbridge.ico"))
+                val icon = rootProject.file("installer/linkbridge.ico")
+                if (icon.exists()) {
+                    iconFile.set(icon)
+                }
             }
         }
     }
