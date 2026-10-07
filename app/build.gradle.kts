@@ -44,6 +44,12 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+
+    lint {
+        // Ce détecteur plante avec l'API d'analyse de Kotlin 2.0.21, sans rapport avec le
+        // projet : désactivé pour que le reste de l'analyse s'exécute au lieu d'échouer.
+        disable += "NullSafeMutableLiveData"
+    }
 }
 
 dependencies {

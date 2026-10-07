@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
+    <!-- Android 12 et avant : Wi‑Fi Direct passe par la position, et le système refuse
+         une demande de position précise qui ne réclame pas aussi la position approximative.
+         Les deux autorisations vont donc toujours ensemble. -->
+    <uses-permission
+        android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="32" />
     <uses-permission
         android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="32" />
@@ -44,14 +50,24 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".GuideActivity"
+            android:exported="false"
+            android:label="Guide LinkBridge"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- Le partage ne dépend pas de l'écran : les deux services continuent de tourner
+             quand l'application est fermée ou la tâche balayée des applications récentes. -->
         <service
             android:name=".GatewayService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="connectedDevice" />
 
         <service
             android:name=".VpnTunnelService"
             android:exported="false"
+            android:stopWithTask="false"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse">
             <intent-filter>

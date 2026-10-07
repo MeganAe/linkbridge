@@ -9,12 +9,23 @@ import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -46,10 +57,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -60,6 +73,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -69,6 +84,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -79,7 +95,11 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.startForegroundService
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
-private enum class LinkRole { SHARE, RECEIVE }
+/** Délai au-delà duquel une demande de connexion sans réponse est annoncée à l'utilisateur. */
+private const val CONNECT_TIMEOUT_MS = 30_000L
+
+/** Code de demande pour l'autorisation d'afficher les notifications. */
+private const val REQUEST_NOTIFICATIONS = 41
 
 class MainActivity : ComponentActivity() {
     private var role by mutableStateOf<LinkRole?>(null)
@@ -110,8 +130,26 @@ class MainActivity : ComponentActivity() {
     // l'écran d'accueil le vérifie et propose d'ouvrir les réglages.
     private var wifiOn by mutableStateOf(true)
 
-    // Guide de démarrage : montré une seule fois, puis rappelé par le bouton Guide.
-    private var showGuide by mutableStateOf(false)
+    // Session en cours : permet de retrouver l'écran du partage quand on rouvre
+    // l'application alors que le service tourne toujours en arrière-plan.
+    private var sessionActive by mutableStateOf(false)
+
+    // Session née d'un lien Wi‑Fi Direct : les services suivent alors l'état du lien pour
+    // qu'une connexion terminée ne laisse jamais une notification qui annonce le contraire.
+    private var sessionFromDirect = false
+
+    // Une invitation est partie et n'a pas encore abouti : garde-fou contre les doublons.
+    private var connecting by mutableStateOf(false)
+
+    // Un lien a réellement été formé.
+    private var linkUp = false
+
+    // Relais dont la connexion a été obtenue avant l'autorisation VPN.
+    private var pendingHost: String? = null
+
+    // Surveillant : au-delà de trente secondes sans réponse, l'utilisateur est prévenu
+    // au lieu de rester devant un écran qui ne dit rien.
+    private var connectWatchdog: Runnable? = null
 
     // Applications qui passent par la connexion reçue (téléphone B) : toutes,
     // ou seulement celles que l'utilisateur a cochées.
@@ -128,13 +166,22 @@ class MainActivity : ComponentActivity() {
             pendingManual = null
             if (manual != null) {
                 status = "VPN autorisé. Connexion au relais ${manual.first}…"
-                startReceiverVpn(manual.first, manual.second)
+                startReceiverVpn(manual.first, manual.second, SOURCE_MANUAL)
+            } else if (pendingHost != null) {
+                // Le lien Wi‑Fi Direct était déjà formé : le tunnel démarre dès que le code
+                // est saisi, sans que l'utilisateur ait à recommencer la moindre étape.
+                if (pairingInput.length == 6) {
+                    tryStartPendingTunnel()
+                } else {
+                    status = "Lien établi. Entre le code à 6 chiffres affiché sur l'autre appareil."
+                }
             } else {
                 status = "VPN autorisé. Choisis le téléphone A."
                 wifiDirect.startReceiver()
             }
         } else {
             status = "Autorisation VPN refusée"
+            pendingHost = null
         }
     }
 
@@ -160,16 +207,67 @@ class MainActivity : ComponentActivity() {
                 groupSsid = ssid
                 groupPassphrase = passphrase
             },
-            onWifiState = { enabled -> wifiOn = enabled }
+            onWifiState = { enabled -> wifiOn = enabled },
+            onDisconnected = {
+                connecting = false
+                cancelConnectWatchdog()
+                if (linkUp) {
+                    linkUp = false
+                    sessionActive = false
+                    SessionStore.clear(this)
+                    groupSsid = null
+                    groupPassphrase = null
+                    if (sessionFromDirect) {
+                        sessionFromDirect = false
+                        stopBackgroundSession()
+                    }
+                    status = "La connexion s'est terminée"
+                }
+            },
+            onConnectFailed = { message, retry ->
+                connecting = false
+                cancelConnectWatchdog()
+                status = if (retry) {
+                    "$message. Appuie de nouveau sur la ligne du téléphone pour réessayer."
+                } else {
+                    message
+                }
+            }
         )
         wifiDirect.register()
         wifiOn = wifiDirect.wifiEnabled()
-        showGuide = !GuideStore.hasSeen(this)
 
-        val saved = AppSelectionStore.load(this)
-        restrictApps = saved.restrict
-        selectedApps = saved.packages
-        Thread { installedApps = AppSelectionStore.listLaunchableApps(this) }.apply {
+        // Le guide s'ouvre en pleine page au premier lancement, puis reste accessible par le
+        // bouton Guide de la barre du haut.
+        if (!GuideStore.hasSeen(this)) openGuide()
+
+        // Session déjà en cours : l'application a été fermée pendant que le partage tournait.
+        val saved = SessionStore.load(this)
+        if (saved.active && (GatewayService.running || VpnTunnelService.running)) {
+            sessionActive = true
+            linkUp = true
+            sessionFromDirect = saved.role == LinkRole.SHARE
+            role = saved.role
+            if (saved.code.isNotEmpty()) pairingCode = saved.code
+            status = when (saved.role) {
+                LinkRole.SHARE -> "Partage en cours. Il continue même si tu fermes l'application."
+                LinkRole.RECEIVE -> "Connexion reçue active. Elle continue en arrière-plan."
+                null -> "Session en cours"
+            }
+        } else if (saved.active) {
+            // Les services se sont arrêtés entre-temps : on ne laisse pas une session fantôme.
+            SessionStore.clear(this)
+        }
+
+        val selection = AppSelectionStore.load(this)
+        restrictApps = selection.restrict
+        selectedApps = selection.packages
+        Thread {
+            // La liste se construit hors du fil principal, puis revient sur l'écran : écrire
+            // l'état Compose depuis un autre fil faisait clignoter la liste, parfois sans rien.
+            val apps = AppSelectionStore.listLaunchableApps(this)
+            runOnUiThread { installedApps = apps }
+        }.apply {
             name = "linkbridge-apps"
             start()
         }
@@ -179,9 +277,9 @@ class MainActivity : ComponentActivity() {
                 role = role,
                 status = status,
                 wifiOn = wifiOn,
-                showGuide = showGuide,
-                onDismissGuide = ::dismissGuide,
-                onOpenGuide = { showGuide = true },
+                sessionActive = sessionActive,
+                connecting = connecting,
+                onOpenGuide = ::openGuide,
                 onOpenWifiSettings = ::openWifiSettings,
                 pairingCode = pairingCode,
                 pairingInput = pairingInput,
@@ -204,12 +302,26 @@ class MainActivity : ComponentActivity() {
                 onManualIpChange = { manualIp = it.filter { character -> !character.isWhitespace() } },
                 onManualCodeChange = { manualCode = it.filter { character -> character.isDigit() }.take(6) },
                 onManualConnect = { host, code -> beginManualReceiving(host, code) },
-                onPairingInputChange = { pairingInput = it.filter { character -> character.isDigit() }.take(6) },
+                onPairingInputChange = { raw ->
+                    val clean = raw.filter { character -> character.isDigit() }.take(6)
+                    pairingInput = clean
+                    // Le lien est parfois déjà formé quand le code arrive : on enchaîne.
+                    if (clean.length == 6) tryStartPendingTunnel()
+                },
                 onShare = { runWithNearbyPermissions(::beginSharing) },
                 onReceive = { runWithNearbyPermissions(::beginReceiving) },
                 onPeerSelected = { peer ->
-                    if (pairingInput.length != 6) status = "Entre d'abord le code du téléphone A"
-                    else if (appSelectionValid()) wifiDirect.connect(peer)
+                    when {
+                        !vpnPrepared -> status =
+                            "Autorise d'abord le VPN, puis appuie de nouveau sur Recevoir"
+                        pairingInput.length != 6 -> status =
+                            "Entre d'abord le code affiché sur l'autre téléphone"
+                        !appSelectionValid() -> Unit
+                        wifiDirect.connect(peer) -> {
+                            connecting = true
+                            startConnectWatchdog()
+                        }
+                    }
                 },
                 onStop = ::stopEverything
             )
@@ -218,26 +330,120 @@ class MainActivity : ComponentActivity() {
 
     private fun onConnectionInfo(info: WifiP2pInfo) {
         val host = info.groupOwnerAddress?.hostAddress ?: GatewayService.DEFAULT_GROUP_OWNER_ADDRESS
+        connecting = false
+        cancelConnectWatchdog()
+        // Une invitation acceptée depuis la notification d'Android arrive ici alors que
+        // l'utilisateur n'a rien choisi dans l'application. C'est le sens réel du lien qui
+        // décide : c'est exactement ce qui manquait, accepter l'invitation ne faisait rien.
+        if (role == null) role = if (info.isGroupOwner) LinkRole.SHARE else LinkRole.RECEIVE
+        val current = role
+        linkUp = true
+        sessionActive = true
+        sessionFromDirect = true
         when {
-            role == LinkRole.SHARE && info.isGroupOwner -> {
-                status = "Téléphone B connecté. Partage actif."
+            current == LinkRole.SHARE && info.isGroupOwner -> {
+                SessionStore.save(this, LinkRole.SHARE, pairingCode)
+                status = "Téléphone B connecté. Le partage continue même si tu fermes l'application."
                 startGateway(host)
             }
-            role == LinkRole.RECEIVE && !info.isGroupOwner && vpnPrepared -> {
-                status = "Téléphone A connecté. Démarrage du VPN…"
-                startReceiverVpn(host, pairingInput)
+
+            current == LinkRole.RECEIVE && !info.isGroupOwner -> {
+                SessionStore.save(this, LinkRole.RECEIVE, pairingInput)
+                when {
+                    pairingInput.length != 6 -> {
+                        // Le lien est formé, il ne manque que le code : le tunnel partira tout
+                        // seul dès la sixième chiffre, sans nouvel appui.
+                        pendingHost = host
+                        status =
+                            "Lien établi. Entre le code à 6 chiffres affiché sur l'autre appareil."
+                    }
+
+                    !vpnPrepared -> {
+                        // L'autorisation VPN manque encore : on garde le relais de côté pour
+                        // démarrer le tunnel dès qu'elle arrive, au lieu de ne rien faire.
+                        pendingHost = host
+                        status = "Lien établi. Autorise le VPN pour terminer la connexion."
+                    }
+
+                    else -> {
+                        status = "Téléphone A connecté. Démarrage du tunnel…"
+                        startReceiverVpn(host, pairingInput, SOURCE_DIRECT)
+                    }
+                }
+            }
+
+            current == LinkRole.SHARE -> {
+                status =
+                    "Le lien s'est formé dans le mauvais sens. Appuie sur Arrêter, puis relance le partage."
+            }
+
+            else -> {
+                status =
+                    "Le lien s'est formé dans le mauvais sens. Appuie sur Annuler, puis relance la réception."
             }
         }
     }
 
+    /**
+     * Le lien Wi‑Fi Direct peut être formé avant que tout soit prêt : un code encore vide, ou
+     * l'autorisation VPN. Dès que la dernière pièce arrive, le tunnel démarre tout seul.
+     */
+    private fun tryStartPendingTunnel() {
+        val host = pendingHost ?: return
+        if (!vpnPrepared || pairingInput.length != 6) return
+        pendingHost = null
+        status = "Téléphone A connecté. Démarrage du tunnel…"
+        startReceiverVpn(host, pairingInput, SOURCE_DIRECT)
+    }
+
+    /** Ouvre le guide, désormais une page complète et non une fenêtre de dialogue. */
+    private fun openGuide() {
+        GuideStore.markSeen(this)
+        startActivity(Intent(this, GuideActivity::class.java))
+    }
+
+    /** Sans cette autorisation, la notification du partage reste invisible sur Android 13 et plus. */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+        ) return
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+    }
+
+    private fun startConnectWatchdog() {
+        cancelConnectWatchdog()
+        val task = Runnable {
+            if (connecting) {
+                connecting = false
+                status =
+                    "La demande n'a pas abouti. Rapproche les deux téléphones, puis appuie de nouveau sur la ligne à relier."
+            }
+        }
+        connectWatchdog = task
+        Handler(Looper.getMainLooper()).postDelayed(task, CONNECT_TIMEOUT_MS)
+    }
+
+    private fun cancelConnectWatchdog() {
+        connectWatchdog?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        connectWatchdog = null
+    }
+
     private fun beginSharing() {
         if (!wifiOn) {
-            status = "Active le Wi-Fi, puis appuie de nouveau sur Partager"
-            showGuide = !GuideStore.hasSeen(this)
+            status = "Active le Wi‑Fi, puis appuie de nouveau sur Partager"
+            if (!GuideStore.hasSeen(this)) openGuide()
             return
         }
+        requestNotificationPermissionIfNeeded()
         role = LinkRole.SHARE
+        connecting = false
+        linkUp = false
+        sessionFromDirect = true
+        pendingHost = null
         pairingCode = PairingCode.generate()
+        sessionActive = true
+        SessionStore.save(this, LinkRole.SHARE, pairingCode)
         peers = emptyList()
         status = "Création du lien privé…"
         startGateway(GatewayService.DEFAULT_GROUP_OWNER_ADDRESS)
@@ -245,7 +451,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun beginReceiving() {
+        requestNotificationPermissionIfNeeded()
         role = LinkRole.RECEIVE
+        linkUp = false
+        connecting = false
+        sessionFromDirect = true
         val intent = VpnService.prepare(this)
         if (intent != null) {
             status = "Autorise LinkBridge à créer la connexion VPN"
@@ -270,27 +480,45 @@ class MainActivity : ComponentActivity() {
         AppSelectionStore.save(this, restrictApps, selectedApps)
     }
 
-    /** Refuse « seulement certaines applications » quand aucune n'est cochée. */
+    /**
+     * Vérifie que le mode « seulement certaines applications » a bien au moins une
+     * application utilisable. Pendant le chargement de la liste, on laisse passer :
+     * le service ignore de lui-même les paquets qui n'existent plus.
+     */
     private fun appSelectionValid(): Boolean {
-        if (restrictApps && selectedApps.isEmpty()) {
-            status = "Choisis au moins une application, ou repasse sur « Toutes les applications »"
-            return false
-        }
-        return true
+        if (!restrictApps) return true
+        if (installedApps.isEmpty()) return true
+        val installed = installedApps.map { it.packageName }.toSet()
+        if (selectedApps.any { it in installed }) return true
+        status = "Choisis au moins une application installée, ou repasse sur « Toutes les applications »"
+        return false
     }
 
-    private fun startReceiverVpn(host: String, code: String) {
+    private fun startReceiverVpn(host: String, code: String, source: String) {
         if (code.length != 6) {
             status = "Entre le code affiché sur le téléphone A"
             return
         }
         if (!appSelectionValid()) return
+        // Les applications désinstallées depuis le dernier choix sont retirées ici : elles
+        // faisaient échouer la préparation du tunnel, et la connexion ne démarrait jamais.
+        val installed = installedApps.map { it.packageName }.toSet()
+        val allowed = when {
+            !restrictApps -> emptySet()
+            installed.isEmpty() -> selectedApps
+            else -> selectedApps.filter { it in installed }.toSet()
+        }
+        if (restrictApps && allowed.isEmpty()) {
+            status = "Aucune des applications choisies n'est installée. Repasse sur « Toutes les applications »"
+            return
+        }
         val intent = Intent(this, VpnTunnelService::class.java)
             .setAction(VpnTunnelService.ACTION_START)
             .putExtra(VpnTunnelService.EXTRA_GATEWAY_HOST, host)
             .putExtra(VpnTunnelService.EXTRA_CODE, code)
             .putExtra(VpnTunnelService.EXTRA_RESTRICT_APPS, restrictApps)
-            .putStringArrayListExtra(VpnTunnelService.EXTRA_ALLOWED_APPS, ArrayList(selectedApps))
+            .putStringArrayListExtra(VpnTunnelService.EXTRA_ALLOWED_APPS, ArrayList(allowed))
+            .putExtra(VpnTunnelService.EXTRA_SOURCE, source)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(this, intent)
         else startService(intent)
     }
@@ -301,6 +529,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun beginManualReceiving(host: String, code: String) {
         role = LinkRole.RECEIVE
+        sessionFromDirect = false
         val cleanHost = host.trim()
         if (cleanHost.isEmpty() || code.length != 6) {
             status = "Entre l'adresse du relais et le code à 6 chiffres"
@@ -315,15 +544,33 @@ class MainActivity : ComponentActivity() {
         } else {
             vpnPrepared = true
             status = "Connexion au relais $cleanHost…"
-            startReceiverVpn(cleanHost, code)
+            startReceiverVpn(cleanHost, code, SOURCE_MANUAL)
         }
     }
 
-    private fun stopEverything() {
-        wifiDirect.stop()
+    /**
+     * Le lien a disparu : les services s'arrêtent au lieu de laisser une notification qui
+     * annonce une connexion qui n'existe plus.
+     */
+    private fun stopBackgroundSession() {
         stopService(Intent(this, GatewayService::class.java))
-        stopService(Intent(this, VpnTunnelService::class.java).setAction(VpnTunnelService.ACTION_STOP))
+        stopService(
+            Intent(this, VpnTunnelService::class.java).setAction(VpnTunnelService.ACTION_STOP)
+        )
+    }
+
+    private fun stopEverything() {
+        cancelConnectWatchdog()
+        wifiDirect.cancelConnect()
+        wifiDirect.stop()
+        stopBackgroundSession()
+        sessionFromDirect = false
         pendingManual = null
+        pendingHost = null
+        connecting = false
+        linkUp = false
+        sessionActive = false
+        SessionStore.clear(this)
         groupSsid = null
         groupPassphrase = null
         role = null
@@ -332,10 +579,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runWithNearbyPermissions(action: () -> Unit) {
+        // Android 12 et avant réclame la position précise, et refuse net une demande qui
+        // n'inclut pas aussi la position approximative : les deux sont demandées ensemble.
         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             listOf(Manifest.permission.NEARBY_WIFI_DEVICES)
         } else {
-            listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            listOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
         }
         val missing = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -362,11 +614,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun dismissGuide() {
-        showGuide = false
-        GuideStore.markSeen(this)
-    }
-
     override fun onDestroy() {
         wifiDirect.unregister()
         super.onDestroy()
@@ -379,8 +626,8 @@ private fun LinkBridgeApp(
     role: LinkRole?,
     status: String,
     wifiOn: Boolean,
-    showGuide: Boolean,
-    onDismissGuide: () -> Unit,
+    sessionActive: Boolean,
+    connecting: Boolean,
     onOpenGuide: () -> Unit,
     onOpenWifiSettings: () -> Unit,
     pairingCode: String,
@@ -404,37 +651,17 @@ private fun LinkBridgeApp(
     onPeerSelected: (WifiP2pDevice) -> Unit,
     onStop: () -> Unit
 ) {
-    val colors = androidx.compose.material3.lightColorScheme(
-        primary = LinkBridgeBrand.Purple,
-        onPrimary = Color.White,
-        primaryContainer = LinkBridgeBrand.Lavender,
-        onPrimaryContainer = LinkBridgeBrand.Ink,
-        secondary = LinkBridgeBrand.Coral,
-        onSecondary = Color.White,
-        secondaryContainer = LinkBridgeBrand.Butter,
-        onSecondaryContainer = LinkBridgeBrand.Ink,
-        tertiary = Color(0xFF087F6C),
-        background = LinkBridgeBrand.Background,
-        surface = LinkBridgeBrand.Background
-    )
-    val expressiveShapes = androidx.compose.material3.Shapes(
-        large = RoundedCornerShape(28.dp),
-        extraLarge = RoundedCornerShape(36.dp)
-    )
-
     var showAbout by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
-    // Back returns to the role menu (and stops sharing/receiving) instead of
-    // closing the app. From the menu itself, back exits normally.
-    BackHandler(enabled = role != null) { onStop() }
 
-    MaterialTheme(
-        colorScheme = colors,
-        shapes = expressiveShapes,
-        typography = LinkBridgeTypography
-    ) {
+    // La barre du haut accompagne le défilement : elle se réduit d'elle-même et revient
+    // dès qu'on remonte. Le geste reste continu, sans saccade à l'entrée du contenu.
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        rememberTopAppBarState()
+    )
+
+    LinkBridgeTheme {
         if (showAbout) AboutDialog(onDismiss = { showAbout = false })
-        if (showGuide) GuideDialog(onDismiss = onDismissGuide)
         if (showAppPicker) {
             AppPickerDialog(
                 apps = installedApps,
@@ -444,12 +671,13 @@ private fun LinkBridgeApp(
             )
         }
         Scaffold(
+            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             containerColor = LinkBridgeBrand.Background,
             topBar = {
-                TopAppBar(
+                LargeTopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            LinkBridgeMark(Modifier.size(32.dp))
+                            LinkBridgeMark(Modifier.size(30.dp))
                             Spacer(Modifier.width(10.dp))
                             Text("LinkBridge", fontWeight = FontWeight.Bold)
                         }
@@ -459,7 +687,15 @@ private fun LinkBridgeApp(
                         IconButton(onClick = { showAbout = true }) {
                             Icon(Icons.Outlined.Info, contentDescription = "À propos")
                         }
-                    }
+                    },
+                    scrollBehavior = scrollBehavior,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = LinkBridgeBrand.Background,
+                        scrolledContainerColor = LinkBridgeBrand.Background,
+                        titleContentColor = LinkBridgeBrand.Ink,
+                        navigationIconContentColor = LinkBridgeBrand.Ink,
+                        actionIconContentColor = LinkBridgeBrand.Ink
+                    )
                 )
             }
         ) { padding ->
@@ -468,10 +704,19 @@ private fun LinkBridgeApp(
                     .fillMaxSize()
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
+                    .animateContentSize(tween(220))
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 HeroCard(role = role, status = status)
+
+                AnimatedVisibility(
+                    visible = sessionActive,
+                    enter = fadeIn(tween(200)) + expandVertically(tween(240)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(200))
+                ) {
+                    SessionNotice(onStop = onStop)
+                }
 
                 if (role == null) {
                     PreparationCard(
@@ -502,7 +747,11 @@ private fun LinkBridgeApp(
                     )
                 }
 
-                AnimatedVisibility(role == LinkRole.SHARE) {
+                AnimatedVisibility(
+                    visible = role == LinkRole.SHARE,
+                    enter = fadeIn(tween(200)) + expandVertically(tween(240)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(200))
+                ) {
                     SharePanel(
                         pairingCode = pairingCode,
                         groupSsid = groupSsid,
@@ -511,8 +760,13 @@ private fun LinkBridgeApp(
                     )
                 }
 
-                AnimatedVisibility(role == LinkRole.RECEIVE) {
+                AnimatedVisibility(
+                    visible = role == LinkRole.RECEIVE,
+                    enter = fadeIn(tween(200)) + expandVertically(tween(240)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(200))
+                ) {
                     ReceivePanel(
+                        connecting = connecting,
                         pairingInput = pairingInput,
                         onPairingInputChange = onPairingInputChange,
                         peers = peers,
@@ -534,6 +788,32 @@ private fun LinkBridgeApp(
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+}
+
+/**
+ * Rappel discret pendant une session : le travail continue hors de l'écran, et il ne
+ * s'arrête que sur une demande explicite.
+ */
+@Composable
+private fun SessionNotice(onStop: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(LinkBridgeBrand.Mint)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Outlined.Security, contentDescription = null, tint = LinkBridgeBrand.Ink)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            "Le partage continue même si tu fermes l'application. La notification permet de le suivre et de l'arrêter.",
+            style = MaterialTheme.typography.bodySmall,
+            color = LinkBridgeBrand.Ink,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onStop) { Text("Arrêter") }
     }
 }
 
@@ -563,9 +843,24 @@ private fun HeroCard(role: LinkRole?, status: String) {
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(if (role == null) LinkBridgeBrand.Coral else LinkBridgeBrand.Mint))
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(if (role == null) LinkBridgeBrand.Coral else LinkBridgeBrand.Mint)
+                )
                 Spacer(Modifier.width(8.dp))
-                Text(status, color = Color.White.copy(alpha = 0.88f))
+                // Le statut change souvent : il glisse au lieu de sauter d'un coup.
+                AnimatedContent(
+                    targetState = status,
+                    transitionSpec = {
+                        (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 3 })
+                            .togetherWith(fadeOut(tween(120)) + slideOutVertically(tween(120)) { -it / 3 })
+                    },
+                    label = "statut"
+                ) { current ->
+                    Text(current, color = Color.White.copy(alpha = 0.88f))
+                }
             }
         }
     }
@@ -659,6 +954,7 @@ private fun SharePanel(
 
 @Composable
 private fun ReceivePanel(
+    connecting: Boolean,
     pairingInput: String,
     onPairingInputChange: (String) -> Unit,
     peers: List<WifiP2pDevice>,
@@ -716,10 +1012,27 @@ private fun ReceivePanel(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
-        if (peers.isEmpty()) {
+        if (connecting) {
+            Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Butter)) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = LinkBridgeBrand.Ink
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "Demande envoyée. Accepte la connexion qui s'affiche sur l'autre téléphone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LinkBridgeBrand.Ink
+                    )
+                }
+            }
+        }
+        if (peers.isEmpty() && !connecting) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             Text("Recherche des appareils LinkBridge à proximité…")
-        } else {
+        } else if (peers.isNotEmpty()) {
             Text("Téléphones trouvés", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             peers.forEach { peer ->
                 OutlinedCard(onClick = { onPeerSelected(peer) }, modifier = Modifier.fillMaxWidth()) {
@@ -769,7 +1082,7 @@ private fun ReceivePanel(
 
 @Composable
 private fun TrustPanel() {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF0ECF7))) {
+    Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Lavender)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Outlined.Security, contentDescription = null, tint = LinkBridgeBrand.Purple)
             Spacer(Modifier.width(12.dp))
@@ -785,7 +1098,7 @@ private fun TrustPanel() {
 }
 
 @Composable
-private fun LinkBridgeMark(modifier: Modifier = Modifier) {
+internal fun LinkBridgeMark(modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(R.drawable.ic_linkbridge),
         contentDescription = "LinkBridge",
@@ -810,7 +1123,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 Text("Téléphone B : celui qui reçoit", fontWeight = FontWeight.Bold)
                 Text("Appuie sur « Recevoir », autorise le VPN, entre le code, puis choisis le téléphone A dans la liste.")
                 Text(
-                    "Android affiche une icône VPN et une notification pendant la connexion. Le bouton retour arrête le lien et revient à l'accueil.",
+                    "Android affiche une icône VPN et une notification pendant la connexion. Le partage continue en arrière-plan quand tu quittes l'application : il ne s'arrête que sur le bouton Arrêter.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 HorizontalDivider()

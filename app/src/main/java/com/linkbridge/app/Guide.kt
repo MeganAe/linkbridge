@@ -1,50 +1,36 @@
 package com.linkbridge.app
 
-import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.WifiOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
-/**
- * Mémorise si le guide de démarrage a déjà été montré sur ce téléphone.
- * Rien d'autre n'est enregistré, et rien ne quitte l'appareil.
- */
-object GuideStore {
-    private const val PREFS = "linkbridge_guide"
-    private const val KEY_SEEN = "guide_seen"
-
-    fun hasSeen(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SEEN, false)
-
-    fun markSeen(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_SEEN, true)
-            .apply()
-    }
-}
+import androidx.compose.ui.unit.sp
 
 /**
  * Carte de préparation affichée sur l'écran d'accueil.
@@ -63,6 +49,7 @@ internal fun PreparationCard(
         colors = CardDefaults.cardColors(
             containerColor = if (wifiOn) LinkBridgeBrand.Lavender else LinkBridgeBrand.Butter
         ),
+        shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -115,94 +102,170 @@ private fun PreparationStep(number: String, text: String) {
     }
 }
 
-/**
- * Guide de démarrage complet. Il est montré au premier lancement, puis reste accessible par le
- * bouton Guide de la barre du haut et par la carte de préparation.
- */
+/* ---------------------------------------------------------------------------------------
+ * Contenu du guide, affiché dans sa propre page par GuideActivity.
+ * ------------------------------------------------------------------------------------ */
+
+/** Bandeau d'ouverture de la page guide. */
 @Composable
-internal fun GuideDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Terminé") } },
-        title = { Text("Comment utiliser LinkBridge", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                GuideSection("Ce qu'il faut savoir")
-                GuideBullet("Le Wi‑Fi doit être activé sur les deux téléphones. C'est la seule chose à préparer.")
-                GuideBullet(
-                    "Le partage de connexion, le point d'accès et le mode avion ne servent à rien ici. " +
-                        "LinkBridge relie les deux téléphones directement, sans passer par un routeur."
+internal fun GuideHero() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Ink),
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LinkBridgeMark(Modifier.size(54.dp))
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Text(
+                    "Un pont, pas un hotspot",
+                    color = LinkBridgeBrand.Mint,
+                    style = MaterialTheme.typography.labelLarge
                 )
-                GuideBullet("Les deux téléphones doivent rester à quelques mètres l'un de l'autre.")
-
-                Spacer(Modifier.padding(top = 4.dp))
-                GuideSection("Téléphone A, celui qui a Internet")
-                GuideStep("1", "Ouvre LinkBridge, puis appuie sur Partager.")
-                GuideStep("2", "Si le Wi‑Fi est éteint, LinkBridge te le dit : active-le et reviens.")
-                GuideStep("3", "Un code à 6 chiffres apparaît. Garde l'écran allumé.")
-                GuideStep("4", "Ne coupe pas les données mobiles de ce téléphone : c'est lui qui fournit Internet.")
-
-                Spacer(Modifier.padding(top = 4.dp))
-                GuideSection("Téléphone B, celui qui reçoit")
-                GuideStep("1", "Active le Wi‑Fi, ouvre LinkBridge, puis appuie sur Recevoir.")
-                GuideStep("2", "Autorise la recherche des appareils à proximité quand Android le demande.")
-                GuideStep("3", "Entre le code affiché sur le téléphone A.")
-                GuideStep("4", "Choisis le téléphone A dans la liste, puis accepte la connexion qui apparaît sur A.")
-                GuideStep("5", "Autorise le VPN. C'est ce qui fait passer la connexion reçue dans toutes tes applications.")
-                GuideStep("6", "Le Wi‑Fi affiché peut indiquer que le réseau n'a pas Internet : c'est normal, la connexion vient de LinkBridge.")
-
-                Spacer(Modifier.padding(top = 4.dp))
-                GuideSection("Si ça ne marche pas")
-                GuideBullet("La liste reste vide : vérifie le Wi‑Fi des deux téléphones et le code saisi.")
-                GuideBullet("La connexion se coupe : rapproche les téléphones, puis relance Recevoir.")
-                GuideBullet("Le VPN s'arrête tout seul : dans les réglages Android, retire LinkBridge de l'optimisation de la batterie.")
-                GuideBullet("Autorise LinkBridge dans le pare-feu si tu utilises la version PC.")
-
-                Spacer(Modifier.padding(top = 4.dp))
-                GuideSection("Depuis un ordinateur")
-                GuideBullet(
-                    "Sur le téléphone A, la carte Accès PC sur ce réseau donne le nom du réseau et le " +
-                        "mot de passe à saisir dans les réglages Wi‑Fi de l'ordinateur."
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Deux téléphones suffisent",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
                 )
-                GuideBullet(
-                    "Installe ensuite LinkBridge PC, choisis Se connecter, et entre le code à 6 chiffres " +
-                        "avec l'adresse affichée sur le téléphone."
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Pas de câble, pas de compte, pas de routeur.",
+                    color = Color.White.copy(alpha = 0.86f),
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
         }
-    )
-}
-
-@Composable
-private fun GuideSection(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = LinkBridgeBrand.Ink
-    )
-}
-
-@Composable
-private fun GuideBullet(text: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("•", style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.Purple)
-        Text(text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
+/** Une section du guide : titre, sous-titre, puis son contenu. */
 @Composable
-private fun GuideStep(number: String, text: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            number,
-            style = MaterialTheme.typography.labelLarge,
-            color = LinkBridgeBrand.Purple,
-            modifier = Modifier.width(14.dp)
+internal fun GuideSectionCard(
+    number: String?,
+    title: String,
+    subtitle: String? = null,
+    container: Color = Color.White,
+    content: @Composable () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = container),
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (number != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(LinkBridgeBrand.Ink),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            number,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = LinkBridgeBrand.Ink
+                    )
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LinkBridgeBrand.Ink.copy(alpha = 0.72f)
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = LinkBridgeBrand.Ink.copy(alpha = 0.10f))
+            content()
+        }
+    }
+}
+
+/** Une étape numérotée à l'intérieur d'une section. */
+@Composable
+internal fun GuideStepRow(number: String, title: String, detail: String? = null) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(LinkBridgeBrand.Lavender),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                number,
+                color = LinkBridgeBrand.Purple,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Column {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (detail != null) {
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LinkBridgeBrand.Ink.copy(alpha = 0.74f)
+                )
+            }
+        }
+    }
+}
+
+/** Une puce simple, pour les listes sans ordre. */
+@Composable
+internal fun GuideBulletRow(text: String, accent: Color = LinkBridgeBrand.Purple) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            modifier = Modifier
+                .padding(top = 7.dp)
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(accent)
+        ) {}
+        Text(text, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** Encadré d'avertissement, pour les pièges qui font échouer une tentative. */
+@Composable
+internal fun GuideNotice(text: String, container: Color = LinkBridgeBrand.Butter) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(container)
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = null,
+            tint = LinkBridgeBrand.Ink
         )
-        Text(text, style = MaterialTheme.typography.bodyMedium)
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.Ink)
     }
 }

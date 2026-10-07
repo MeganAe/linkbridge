@@ -3,6 +3,7 @@ package com.linkbridge.app
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -23,10 +24,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  * gateway running on phone A.
  */
 class VpnTunnelService : VpnService() {
+    private var watch: LinkWatch? = null
     private var tunFd: ParcelFileDescriptor? = null
     private var configFile: File? = null
     private var engineThread: Thread? = null
     private val stopping = AtomicBoolean(false)
+
+    /** Signature de la session en cours, pour ne pas relancer le tunnel pour rien. */
+    private var currentKey: String? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -44,13 +49,28 @@ class VpnTunnelService : VpnService() {
 
         val restrictApps = intent?.getBooleanExtra(EXTRA_RESTRICT_APPS, false) ?: false
         val allowedApps = intent?.getStringArrayListExtra(EXTRA_ALLOWED_APPS).orEmpty()
+        val source = intent?.getStringExtra(EXTRA_SOURCE) ?: SOURCE_DIRECT
 
+        val key = "$host|$code|$restrictApps|${allowedApps.joinToString(",")}"
         startForegroundCompat()
-        if (tunFd == null) startTunnel(host, code, restrictApps, allowedApps)
+        if (tunFd != null && currentKey == key) {
+            // Même session déjà en cours : la relancer couperait la connexion des applications.
+            return START_STICKY
+        }
+        if (tunFd != null) stopTunnel()
+        currentKey = key
+        running = true
+        startTunnel(host, code, restrictApps, allowedApps, source)
         return START_STICKY
     }
 
-    private fun startTunnel(host: String, code: String, restrictApps: Boolean, allowedApps: List<String>) {
+    private fun startTunnel(
+        host: String,
+        code: String,
+        restrictApps: Boolean,
+        allowedApps: List<String>,
+        source: String
+    ) {
         stopping.set(false)
         val builder = Builder()
             .setSession("LinkBridge")
@@ -79,6 +99,7 @@ class VpnTunnelService : VpnService() {
             if (added == 0) {
                 // Never fall back to "every application": with no allowed
                 // application Android would route the whole phone.
+                notifyStopped()
                 stopSelf()
                 return
             }
@@ -95,8 +116,16 @@ class VpnTunnelService : VpnService() {
 
         tunFd = builder.establish()
         if (tunFd == null) {
+            notifyStopped()
             stopSelf()
             return
+        }
+
+        if (source == SOURCE_DIRECT) {
+            // L'application peut être fermée : c'est le service qui surveille le lien, pour
+            // que le tunnel et sa notification s'arrêtent quand la connexion n'existe plus.
+            watch?.stop()
+            watch = LinkWatch(this) { onLinkLost() }.also { it.start() }
         }
 
         val config = File(cacheDir, "linkbridge-tunnel.yml")
@@ -149,8 +178,52 @@ class VpnTunnelService : VpnService() {
         FileOutputStream(file, false).use { it.write(yaml.toByteArray(Charsets.UTF_8)) }
     }
 
+    /** Explique à l'utilisateur pourquoi le tunnel n'a pas pu démarrer. */
+    private fun notifyStopped() {
+        running = false
+        try {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.notify(
+                NOTIFICATION_ID_STOPPED,
+                NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_stat_linkbridge)
+                    .setContentTitle("LinkBridge n'a pas démarré")
+                    .setContentText(
+                        "Vérifie que le Wi‑Fi est actif et que les applications choisies sont " +
+                            "toujours installées, puis réessaie."
+                    )
+                    .setAutoCancel(true)
+                    .build()
+            )
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Le lien Wi‑Fi Direct est tombé : on libère le tunnel et on prévient l'utilisateur. */
+    private fun onLinkLost() {
+        if (tunFd == null) return
+        try {
+            getSystemService(NotificationManager::class.java).notify(
+                NOTIFICATION_ID_ENDED,
+                NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_stat_linkbridge)
+                    .setContentTitle("LinkBridge · connexion terminée")
+                    .setContentText("Le lien avec l'autre appareil s'est terminé.")
+                    .setAutoCancel(true)
+                    .build()
+            )
+        } catch (_: Throwable) {
+        }
+        stopTunnel()
+        stopSelf()
+    }
+
     private fun stopTunnel() {
+        watch?.stop()
+        watch = null
         if (!stopping.compareAndSet(false, true)) return
+        running = false
+        currentKey = null
         try {
             if (TProxyService.TProxyIsRunning()) TProxyService.TProxyStopService()
         } catch (_: Throwable) {
@@ -187,11 +260,27 @@ class VpnTunnelService : VpnService() {
 
     private fun startForegroundCompat() {
         createChannel()
+        val open = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val stop = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, VpnTunnelService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_linkbridge)
-            .setContentTitle("LinkBridge")
-            .setContentText("Connexion Internet reçue")
+            .setContentTitle("LinkBridge · connexion reçue")
+            .setContentText("Le tunnel continue en arrière-plan")
+            .setContentIntent(open)
+            .addAction(0, "Arrêter la connexion", stop)
             .setOngoing(true)
+            .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
 
@@ -209,7 +298,14 @@ class VpnTunnelService : VpnService() {
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Connexion LinkBridge", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(
+                CHANNEL_ID,
+                "Connexion LinkBridge",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Affiche l'état de la connexion reçue."
+                setShowBadge(false)
+            }
         )
     }
 
@@ -222,8 +318,16 @@ class VpnTunnelService : VpnService() {
         const val EXTRA_CODE = "pairing_code"
         const val EXTRA_RESTRICT_APPS = "restrict_apps"
         const val EXTRA_ALLOWED_APPS = "allowed_apps"
+        const val EXTRA_SOURCE = "source"
         private const val CHANNEL_ID = "linkbridge_vpn"
         private const val NOTIFICATION_ID = 11
+        private const val NOTIFICATION_ID_STOPPED = 12
+        private const val NOTIFICATION_ID_ENDED = 14
         private const val TUN_MTU = 1400
+
+        /** Vrai pendant que le tunnel tourne : sert à restaurer l'écran au retour. */
+        @Volatile
+        var running: Boolean = false
+            private set
     }
 }
