@@ -56,7 +56,12 @@ internal fun AppPickerDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    if (apps.isEmpty()) "Chargement des applications…" else "${selected.size} sélectionnée(s)",
+                    when {
+                        apps.isEmpty() -> "Chargement des applications…"
+                        selected.isEmpty() -> "Aucune application sélectionnée"
+                        selected.size == 1 -> "1 application sélectionnée"
+                        else -> "${selected.size} applications sélectionnées"
+                    },
                     style = MaterialTheme.typography.bodySmall
                 )
                 LazyColumn(Modifier.fillMaxWidth().height(320.dp)) {

@@ -18,6 +18,27 @@ val appVersion: String = providers.gradleProperty("appVersion")
 // La version du projet sert de repli à plusieurs endroits de la DSL jpackage.
 version = appVersion
 
+// Version lue par la boîte « À propos » : un fichier de propriétés écrit à la compilation,
+// pour que l'application n'ait rien à télécharger et rien à deviner.
+val generatedResourcesDir = layout.buildDirectory.dir("generated/linkbridge-resources")
+
+val generateLinkBridgeProperties by tasks.registering {
+    val outputDir = generatedResourcesDir
+    val versionValue = appVersion
+    inputs.property("appVersion", versionValue)
+    outputs.dir(outputDir)
+    doLast {
+        val directory = outputDir.get().asFile
+        directory.mkdirs()
+        File(directory, "linkbridge.properties")
+            .writeText("version=$versionValue\n", Charsets.UTF_8)
+    }
+}
+
+sourceSets.main {
+    resources.srcDir(generateLinkBridgeProperties)
+}
+
 kotlin {
     jvmToolchain(17)
 }
@@ -39,8 +60,12 @@ compose.desktop {
             packageName = "LinkBridge"
             packageVersion = appVersion
             description = "Un pont, pas un hotspot."
-            copyright = "© 2026 Metoushela Walker"
-            vendor = "LinkBridge"
+            // Propriétés du fichier .exe : société et copyright visibles dans l'explorateur.
+            vendor = "Metoushela Walker"
+            // Chaîne volontairement sans caractère non ASCII : jpackage lit son fichier
+            // d'arguments avec l'encodage de la plateforme, et un « © » y casse la commande
+            // sous Linux et donne un texte illisible dans les propriétés du .exe sous Windows.
+            copyright = "Copyright 2026 Metoushela Walker"
 
             windows {
                 // Version explicite au niveau Windows ET MSI : évite la dérivation
@@ -48,10 +73,14 @@ compose.desktop {
                 packageVersion = appVersion
                 msiPackageVersion = appVersion
                 menu = true
+                menuGroup = "LinkBridge"
                 shortcut = true
                 dirChooser = true
                 // Installation par utilisateur, sans droits administrateur.
                 perUserInstall = true
+                // Identifiant d'installation stable : les mises à jour remplacent la version
+                // précédente au lieu de créer une seconde entrée dans la liste des programmes.
+                upgradeUuid = "9C6C71B2-3B2E-45B6-9C67-7E4B0A1D8F52"
                 val icon = rootProject.file("installer/linkbridge.ico")
                 if (icon.exists()) {
                     iconFile.set(icon)

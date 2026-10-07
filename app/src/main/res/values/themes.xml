@@ -1,3 +1,16 @@
 <resources>
-    <style name="Theme.LinkBridge" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <!-- Thème normal de l'application. Le fond de fenêtre reprend la couleur Canvas de la
+         marque : la première image de Compose n'est donc jamais précédée d'un flash blanc. -->
+    <style name="Theme.LinkBridge" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/linkbridge_canvas</item>
+    </style>
+
+    <!-- Thème de démarrage : fond Ink, icône de la marque animée. postSplashScreenTheme
+         rétablit exactement le thème normal. -->
+    <style name="Theme.LinkBridge.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/linkbridge_ink</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_linkbridge</item>
+        <item name="windowSplashScreenAnimationDuration">600</item>
+        <item name="postSplashScreenTheme">@style/Theme.LinkBridge</item>
+    </style>
 </resources>

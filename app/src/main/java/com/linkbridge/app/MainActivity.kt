@@ -46,6 +46,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -75,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.startForegroundService
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 private enum class LinkRole { SHARE, RECEIVE }
 
@@ -138,6 +140,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // L'écran de démarrage disparaît dès la première image prête : aucun délai artificiel.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         wifiDirect = WifiDirectController(
             context = this,
@@ -380,7 +384,8 @@ private fun LinkBridgeApp(
 
     MaterialTheme(
         colorScheme = colors,
-        shapes = expressiveShapes
+        shapes = expressiveShapes,
+        typography = LinkBridgeTypography
     ) {
         if (showAbout) AboutDialog(onDismiss = { showAbout = false })
         if (showAppPicker) {
@@ -574,9 +579,9 @@ private fun SharePanel(
             Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Mint)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "Un ordinateur peut rejoindre ce réseau Wi‑Fi, puis utiliser le relais " +
-                            "avec LinkBridge PC (IP " + GatewayService.DEFAULT_GROUP_OWNER_ADDRESS +
-                            ", port " + Socks5Gateway.DEFAULT_PORT + ") et le code ci-dessus.",
+                        "Un ordinateur peut rejoindre ce réseau Wi‑Fi, puis utiliser le relais avec " +
+                            "LinkBridge PC. Adresse " + GatewayService.DEFAULT_GROUP_OWNER_ADDRESS +
+                            ", port " + Socks5Gateway.DEFAULT_PORT + ", et le code ci-dessus.",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text("Réseau : $groupSsid", fontWeight = FontWeight.Bold)
@@ -633,7 +638,13 @@ private fun ReceivePanel(
                 }
                 if (restrictApps) {
                     OutlinedButton(onClick = onChooseApps, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (selectedCount == 0) "Choisir les applications" else "Choisir les applications ($selectedCount)")
+                        Text(
+                            when {
+                                selectedCount == 0 -> "Choisir les applications"
+                                selectedCount == 1 -> "Choisir les applications, 1 sélectionnée"
+                                else -> "Choisir les applications, $selectedCount sélectionnées"
+                            }
+                        )
                     }
                     Text(
                         "Les autres applications gardent la connexion habituelle de ce téléphone. " +
@@ -671,7 +682,7 @@ private fun ReceivePanel(
                 }
             }
         }
-        Text("Connexion manuelle (réseau local)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Connexion manuelle sur le réseau local", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
             "Pour un relais sans Wi‑Fi Direct : un PC ou un téléphone A sur le même réseau.",
             style = MaterialTheme.typography.bodySmall
@@ -741,12 +752,22 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
                 Text("Partage la connexion Internet d'un téléphone vers un autre via Wi‑Fi Direct, sans hotspot classique.")
-                Text("Téléphone A (qui a Internet)", fontWeight = FontWeight.Bold)
+                Text("Téléphone A : celui qui a Internet", fontWeight = FontWeight.Bold)
                 Text("Appuie sur « Partager » et communique le code à 6 chiffres affiché.")
-                Text("Téléphone B (qui reçoit)", fontWeight = FontWeight.Bold)
+                Text("Téléphone B : celui qui reçoit", fontWeight = FontWeight.Bold)
                 Text("Appuie sur « Recevoir », autorise le VPN, entre le code, puis choisis le téléphone A dans la liste.")
                 Text(
                     "Android affiche une icône VPN et une notification pendant la connexion. Le bouton retour arrête le lien et revient à l'accueil.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                HorizontalDivider()
+                Text("Conçu et développé par Metoushela Walker", fontWeight = FontWeight.Bold)
+                Text(
+                    "Dépôt du projet : https://github.com/MeganAe/linkbridge",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Logiciel sous licence MIT. © 2026 Metoushela Walker.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }

@@ -50,7 +50,7 @@ class DesktopAppState {
         if (sharing) return
         val iface = selectedIface
         if (iface == null) {
-            shareError = "Aucune interface réseau disponible : vérifie ta connexion."
+            shareError = "Aucune interface réseau disponible : vérifie ta connexion."
             return
         }
         shareError = null
@@ -67,8 +67,8 @@ class DesktopAppState {
             sharing = true
             addShareLog("Relais démarré sur ${iface.address}:${Socks5Gateway.DEFAULT_PORT}")
         } catch (t: Throwable) {
-            shareError = "Impossible de démarrer le relais : ${t.message ?: t}"
-            addShareLog("Erreur au démarrage : ${t.message ?: t}")
+            shareError = "Impossible de démarrer le relais : ${t.message ?: t}"
+            addShareLog("Erreur au démarrage : ${t.message ?: t}")
         }
     }
 
@@ -76,7 +76,7 @@ class DesktopAppState {
         try {
             gateway?.stop()
         } catch (t: Throwable) {
-            addShareLog("Erreur à l'arrêt : ${t.message ?: t}")
+            addShareLog("Erreur à l'arrêt : ${t.message ?: t}")
         }
         gateway = null
         sharing = false
@@ -118,7 +118,7 @@ class DesktopAppState {
         val port = relayPort.trim().toIntOrNull()
         val code = relayCode.trim()
         return when {
-            host.isEmpty() -> "Entre l'adresse IP du relais (téléphone A ou PC)."
+            host.isEmpty() -> "Entre l'adresse IP du relais, celle du téléphone A ou du PC."
             port == null || port !in 1..65535 -> "Le port doit être compris entre 1 et 65535."
             code.length != 6 -> "Le code doit contenir 6 chiffres."
             else -> null
@@ -146,7 +146,7 @@ class DesktopAppState {
             testing = false
             result.onSuccess { line ->
                 testOk = true
-                testStatus = "Connexion réussie à travers le relais ($line)"
+                testStatus = "Connexion réussie à travers le relais : $line"
             }.onFailure { t ->
                 testOk = false
                 testStatus = t.message ?: t.toString()
@@ -177,8 +177,8 @@ class DesktopAppState {
             proxyRunning = true
             addProxyLog("Proxy local démarré sur $proxyEndpoint")
         } catch (t: Throwable) {
-            proxyError = "Impossible de démarrer le proxy local : ${t.message ?: t}"
-            addProxyLog("Erreur : ${t.message ?: t}")
+            proxyError = "Impossible de démarrer le proxy local : ${t.message ?: t}"
+            addProxyLog("Erreur : ${t.message ?: t}")
         }
     }
 
@@ -232,7 +232,7 @@ class DesktopAppState {
     fun enableSystemProxy() {
         if (systemProxyOn) return
         if (!proxyRunning) {
-            systemProxyMessage = "Démarre d'abord le proxy local (onglet « Se connecter / Tester »)."
+            systemProxyMessage = "Démarre d'abord le proxy local depuis la page Se connecter."
             return
         }
         WindowsSystemProxy.enable(proxyEndpoint)
@@ -247,7 +247,7 @@ class DesktopAppState {
                 }
             }
             .onFailure { t ->
-                systemProxyMessage = "Impossible d'activer le proxy système : ${t.message ?: t}"
+                systemProxyMessage = "Impossible d'activer le proxy système : ${t.message ?: t}"
                 // Au cas où un changement partiel aurait eu lieu.
                 WindowsSystemProxy.disable()
             }
@@ -261,19 +261,19 @@ class DesktopAppState {
                 addProxyLog(message)
             }
             .onFailure { t ->
-                systemProxyMessage = "Impossible de remettre le proxy système : ${t.message ?: t}"
+                systemProxyMessage = "Impossible de remettre le proxy système : ${t.message ?: t}"
             }
     }
 
     /** Lance un navigateur déjà réglé sur le proxy local de LinkBridge. */
     fun launchApp(app: LaunchableApp) {
         if (!proxyRunning) {
-            appsMessage = "Démarre d'abord le proxy local (onglet « Se connecter / Tester »)."
+            appsMessage = "Démarre d'abord le proxy local depuis la page Se connecter."
             return
         }
         AppLauncher.launch(app, Socks5ChainProxy.DEFAULT_PORT)
             .onSuccess { appsMessage = it; addProxyLog(it) }
-            .onFailure { appsMessage = "Impossible de lancer ${app.name} : ${it.message ?: it}" }
+            .onFailure { appsMessage = "Impossible de lancer ${app.name} : ${it.message ?: it}" }
     }
 
     init {

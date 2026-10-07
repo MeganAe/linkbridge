@@ -43,7 +43,7 @@ object WindowsSystemProxy {
         setValue("ProxyServer", "REG_SZ", hostPort)
         setValue("ProxyOverride", "REG_SZ", BYPASS)
         notifyChange()
-        "Proxy système activé ($hostPort)."
+        "Proxy système activé sur $hostPort."
     }
 
     /** Remet les réglages d'origine. Sans effet si LinkBridge n'avait rien changé. */
@@ -93,14 +93,14 @@ object WindowsSystemProxy {
         val output = process.inputStream.bufferedReader().readText()
         if (!process.waitFor(15, TimeUnit.SECONDS)) {
             process.destroyForcibly()
-            error("Commande trop longue : ${command.first()}")
+            error("Commande trop longue : ${command.first()}")
         }
         return process.exitValue() to output
     }
 
     private fun setValue(name: String, type: String, value: String) {
         val (code, out) = run("reg", "add", KEY, "/v", name, "/t", type, "/d", value, "/f")
-        check(code == 0) { "Écriture du registre refusée ($name) : ${out.trim()}" }
+        check(code == 0) { "Écriture du registre refusée pour $name : ${out.trim()}" }
     }
 
     private fun deleteValue(name: String) {

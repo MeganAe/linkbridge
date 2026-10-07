@@ -33,7 +33,21 @@ The mark is two small bridge pillars that become one path when placed together. 
 
 ## Typography
 
-Use the system sans-serif through Material 3. The UI uses strong, short headlines, generous line height and large touch targets. Do not add a decorative font: the brand personality comes from color, shape and motion.
+One typeface, embedded in the product: **Inter** (SIL Open Font License 1.1). It is shipped
+inside the APK and inside the Windows application, so the rendering is identical on Android
+and on Windows and nothing is fetched at runtime.
+
+- Weights: Regular 400, Medium 500, SemiBold 600, Bold 700 (`app/src/main/res/font/inter_*.ttf`,
+  `desktop/src/main/resources/fonts/inter-*.ttf`).
+- Every Material 3 text style is overridden with Inter, on both platforms.
+- French coverage is required and verified: é è ê à ç œ « » plus the narrow no-break space used
+  before : ; ! ? and inside guillemets.
+- Desktop sizing is mouse-adapted: titles 18–20 sp, body 13–14 sp, buttons 36–40 dp high.
+  Android keeps the mobile scale (body 14–16 sp, targets 48 dp).
+
+Clarity City was considered and is a valid OFL typeface with correct French coverage, but it is
+not distributed through Google Fonts and its upstream repository is archived, so Inter was chosen
+instead. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/INTER_OFL.txt`.
 
 ## UI direction
 

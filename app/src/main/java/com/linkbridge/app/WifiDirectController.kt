@@ -81,7 +81,7 @@ class WifiDirectController(
             }
 
             override fun onFailure(reason: Int) {
-                onStatus("Impossible de créer la liaison Wi-Fi Direct (code $reason)")
+                onStatus("Impossible de créer la liaison Wi-Fi Direct. Code $reason.")
             }
         })
     }
@@ -95,7 +95,7 @@ class WifiDirectController(
             }
 
             override fun onFailure(reason: Int) {
-                onStatus("Recherche Wi-Fi Direct impossible (code $reason)")
+                onStatus("Recherche Wi-Fi Direct impossible. Code $reason.")
             }
         })
     }
@@ -113,7 +113,7 @@ class WifiDirectController(
             }
 
             override fun onFailure(reason: Int) {
-                onStatus("Connexion impossible (code $reason)")
+                onStatus("Connexion impossible. Code $reason.")
             }
         })
     }

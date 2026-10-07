@@ -15,7 +15,7 @@ data class LaunchableApp(
     /** Explication affichée à l'utilisateur. */
     val note: String
         get() = when (kind) {
-            AppKind.CHROMIUM -> "Ouvre une fenêtre à part (profil LinkBridge) qui passe par le téléphone."
+            AppKind.CHROMIUM -> "Ouvre une fenêtre à part, avec un profil LinkBridge réglé sur le téléphone."
             AppKind.FIREFOX -> "Ouvre Firefox avec un profil LinkBridge déjà réglé sur le proxy."
         }
 }

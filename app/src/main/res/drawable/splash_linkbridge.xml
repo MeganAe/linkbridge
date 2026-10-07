@@ -1,0 +1,11 @@
+<!--
+  Icône animée de l'écran de démarrage : la passerelle blanche se rejoint entre les deux
+  piliers, puis se fixe sur l'état final du logo. L'animation se termine exactement sur le
+  dessin statique, donc son gel éventuel ne laisse aucun état intermédiaire bizarre.
+-->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_splash_mark">
+    <target
+        android:name="splashBar"
+        android:animation="@animator/splash_bar" />
+</animated-vector>

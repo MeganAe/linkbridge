@@ -1,0 +1,30 @@
+<!--
+  Icône de l'écran de démarrage, dessinée depuis branding/linkbridge-mark.svg.
+
+  Le dessin occupe le tiers central de la zone de 108 x 108 : sur Android 12 et plus,
+  l'icône est masquée dans un cercle et seul le tiers central est garanti visible.
+  Sur les versions plus anciennes, la même marge évite tout rognage par les encoches.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Pilier gauche, Mint #C7F7E8 -->
+    <path
+        android:fillColor="#C7F7E8"
+        android:pathData="M36.84,36.84 h11.81 v7.03 h-11.81 a7.59,7.59 0 0 0 0,15.19 h11.81 v7.03 h-11.81 a14.63,14.63 0 0 1 0,-29.25 Z" />
+
+    <!-- Pilier droit, Coral #FF7657 -->
+    <path
+        android:fillColor="#FF7657"
+        android:pathData="M59.34,36.84 h11.81 a14.63,14.63 0 0 1 0,29.25 h-11.81 v-7.03 h11.81 a7.59,7.59 0 0 0 0,-15.19 h-11.81 Z" />
+
+    <!-- Passerelle blanche, animée par splash_linkbridge.xml -->
+    <group android:name="splashBar" android:pivotX="54" android:pivotY="54">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M44.16,49.78 h19.69 v8.44 h-19.69 Z" />
+    </group>
+</vector>
