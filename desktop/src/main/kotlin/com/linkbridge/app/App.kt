@@ -81,11 +81,13 @@ fun App(state: DesktopAppState) {
                 TabRow(selectedTabIndex = tab) {
                     Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Partager") })
                     Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Se connecter / Tester") })
+                    Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Applications") })
                 }
 
                 when (tab) {
                     0 -> ShareScreen(state)
                     1 -> ConnectScreen(state)
+                    2 -> AppsScreen(state)
                 }
             }
         }

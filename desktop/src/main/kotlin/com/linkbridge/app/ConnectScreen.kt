@@ -92,7 +92,9 @@ fun ConnectScreen(state: DesktopAppState) {
                 Text(
                     "Chrome et Edge ne savent pas s'authentifier sur un proxy SOCKS5. " +
                         "LinkBridge ouvre donc un proxy local sans mot de passe sur " +
-                        "${state.proxyEndpoint} qui relaie vers le relais distant.",
+                        "${state.proxyEndpoint} qui relaie vers le relais distant. " +
+                        "Ce proxy comprend SOCKS5 et HTTP/HTTPS ; l'onglet « Applications » " +
+                        "permet de l'activer pour tout le PC ou de lancer un navigateur déjà réglé.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -183,6 +183,9 @@ class DesktopAppState {
     }
 
     fun stopProxy() {
+        // Si Windows pointe vers ce proxy, on le remet d'abord comme avant :
+        // sinon plus rien ne se chargerait une fois le proxy arrêté.
+        if (systemProxyOn) disableSystemProxy()
         try {
             proxy?.stop()
         } catch (t: Throwable) {
@@ -203,12 +206,83 @@ class DesktopAppState {
     /** Arrêt propre de tout, appelé à la fermeture de la fenêtre. */
     fun shutdown() {
         try {
+            if (systemProxyOn) disableSystemProxy()
+        } catch (_: Throwable) {
+        }
+        try {
             stopSharing()
         } catch (_: Throwable) {
         }
         try {
             stopProxy()
         } catch (_: Throwable) {
+        }
+    }
+
+    // ----- Onglet « Applications » -----
+    var systemProxyOn by mutableStateOf(false)
+        private set
+    var systemProxyMessage by mutableStateOf<String?>(null)
+    var appsMessage by mutableStateOf<String?>(null)
+    val launchableApps: List<LaunchableApp> = AppLauncher.detect()
+    val systemProxySupported: Boolean = WindowsSystemProxy.isSupported
+    private var shutdownHookAdded = false
+
+    /** Envoie tout le PC (applis qui suivent le proxy Windows) vers le relais. */
+    fun enableSystemProxy() {
+        if (systemProxyOn) return
+        if (!proxyRunning) {
+            systemProxyMessage = "Démarre d'abord le proxy local (onglet « Se connecter / Tester »)."
+            return
+        }
+        WindowsSystemProxy.enable(proxyEndpoint)
+            .onSuccess { message ->
+                systemProxyOn = true
+                systemProxyMessage = message
+                addProxyLog(message)
+                if (!shutdownHookAdded) {
+                    shutdownHookAdded = true
+                    // Filet de sécurité : fermeture « brutale » (session Windows, etc.).
+                    Runtime.getRuntime().addShutdownHook(Thread { WindowsSystemProxy.disable() })
+                }
+            }
+            .onFailure { t ->
+                systemProxyMessage = "Impossible d'activer le proxy système : ${t.message ?: t}"
+                // Au cas où un changement partiel aurait eu lieu.
+                WindowsSystemProxy.disable()
+            }
+    }
+
+    fun disableSystemProxy() {
+        WindowsSystemProxy.disable()
+            .onSuccess { message ->
+                systemProxyOn = false
+                systemProxyMessage = message
+                addProxyLog(message)
+            }
+            .onFailure { t ->
+                systemProxyMessage = "Impossible de remettre le proxy système : ${t.message ?: t}"
+            }
+    }
+
+    /** Lance un navigateur déjà réglé sur le proxy local de LinkBridge. */
+    fun launchApp(app: LaunchableApp) {
+        if (!proxyRunning) {
+            appsMessage = "Démarre d'abord le proxy local (onglet « Se connecter / Tester »)."
+            return
+        }
+        AppLauncher.launch(app, Socks5ChainProxy.DEFAULT_PORT)
+            .onSuccess { appsMessage = it; addProxyLog(it) }
+            .onFailure { appsMessage = "Impossible de lancer ${app.name} : ${it.message ?: it}" }
+    }
+
+    init {
+        // Répare un arrêt brutal précédent : si Windows pointait encore vers un
+        // proxy LinkBridge éteint, on remet les réglages d'origine.
+        if (WindowsSystemProxy.isActive) {
+            WindowsSystemProxy.restoreIfLeftover().onSuccess {
+                addProxyLog("Réglages proxy Windows restaurés après un arrêt inattendu.")
+            }
         }
     }
 
