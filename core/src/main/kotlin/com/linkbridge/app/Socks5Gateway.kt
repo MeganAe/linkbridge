@@ -16,9 +16,11 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
@@ -44,8 +46,21 @@ class Socks5Gateway(
     private val running = AtomicBoolean(false)
     private val workers: ExecutorService = Executors.newCachedThreadPool()
     private val activeClientsCount = AtomicInteger(0)
+    @Volatile
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
+    private val started = CountDownLatch(1)
+
+    /**
+     * Port actually bound. Useful with `port = 0` (the OS picks a free port),
+     * which lets tests run without fighting over a fixed port.
+     */
+    val boundPort: Int
+        get() = serverSocket?.localPort ?: error("Le relais n'est pas démarré")
+
+    /** Blocks until the listening socket is bound; false on timeout. */
+    fun awaitStarted(timeoutMs: Long = 5_000): Boolean =
+        started.await(timeoutMs, TimeUnit.MILLISECONDS)
 
     /** Number of SOCKS5 clients currently being served. */
     val activeClients: Int
@@ -56,12 +71,26 @@ class Socks5Gateway(
         acceptThread = thread(name = "linkbridge-socks-accept", start = true) {
             try {
                 while (running.get() && serverSocket == null) {
+                    val candidate = ServerSocket()
                     try {
-                        serverSocket = ServerSocket().apply {
-                            reuseAddress = true
-                            bind(InetSocketAddress(InetAddress.getByName(bindHost), port))
+                        candidate.reuseAddress = true
+                        candidate.bind(InetSocketAddress(InetAddress.getByName(bindHost), port))
+                        serverSocket = candidate
+                        started.countDown()
+                        // stop() may have run while we were binding: do not
+                        // leave an orphan listening socket behind.
+                        if (!running.get()) {
+                            try {
+                                candidate.close()
+                            } catch (_: IOException) {
+                            }
                         }
                     } catch (_: IOException) {
+                        // Failed bind: release the socket before retrying.
+                        try {
+                            candidate.close()
+                        } catch (_: IOException) {
+                        }
                         try {
                             Thread.sleep(250)
                         } catch (_: InterruptedException) {

@@ -25,17 +25,16 @@ class Socks5ClientTest {
             }
         }
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
             val status = Socks5Client.probeHttp(
                 relayHost = "127.0.0.1",
-                relayPort = Socks5Gateway.DEFAULT_PORT,
+                relayPort = port,
                 username = Socks5Gateway.USERNAME,
                 password = "123456",
                 targetHost = "127.0.0.1",
@@ -52,18 +51,17 @@ class Socks5ClientTest {
     @Test
     fun wrongPasswordIsReportedClearly() {
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
             try {
                 Socks5Client.probeHttp(
                     relayHost = "127.0.0.1",
-                    relayPort = Socks5Gateway.DEFAULT_PORT,
+                    relayPort = port,
                     username = Socks5Gateway.USERNAME,
                     password = "000000",
                     targetHost = "127.0.0.1",
@@ -78,14 +76,4 @@ class Socks5ClientTest {
         }
     }
 
-    private fun waitForPort(port: Int) {
-        repeat(50) {
-            try {
-                Socket("127.0.0.1", port).use { return }
-            } catch (_: Exception) {
-                Thread.sleep(20)
-            }
-        }
-        error("Gateway did not start")
-    }
 }

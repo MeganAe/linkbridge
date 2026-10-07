@@ -24,23 +24,22 @@ class Socks5ChainProxyTest {
             }
         }
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
         val proxy = Socks5ChainProxy(
             listenHost = "127.0.0.1",
             listenPort = 0,
             upstreamHost = "127.0.0.1",
-            upstreamPort = Socks5Gateway.DEFAULT_PORT,
+            upstreamPort = port,
             upstreamUser = Socks5Gateway.USERNAME,
             upstreamPass = "123456"
         )
         proxy.start()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
             Socket("127.0.0.1", proxy.boundPort).use { browser ->
                 browser.soTimeout = 5_000
                 val input = DataInputStream(browser.getInputStream())
@@ -84,23 +83,22 @@ class Socks5ChainProxyTest {
     @Test
     fun udpAssociateIsRefusedWithClearReply() {
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
         val proxy = Socks5ChainProxy(
             listenHost = "127.0.0.1",
             listenPort = 0,
             upstreamHost = "127.0.0.1",
-            upstreamPort = Socks5Gateway.DEFAULT_PORT,
+            upstreamPort = port,
             upstreamUser = Socks5Gateway.USERNAME,
             upstreamPass = "123456"
         )
         proxy.start()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
             Socket("127.0.0.1", proxy.boundPort).use { browser ->
                 browser.soTimeout = 5_000
                 val input = DataInputStream(browser.getInputStream())
@@ -127,14 +125,4 @@ class Socks5ChainProxyTest {
         }
     }
 
-    private fun waitForPort(port: Int) {
-        repeat(50) {
-            try {
-                Socket("127.0.0.1", port).use { return }
-            } catch (_: Exception) {
-                Thread.sleep(20)
-            }
-        }
-        error("Gateway did not start")
-    }
 }

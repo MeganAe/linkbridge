@@ -30,15 +30,14 @@ class Socks5GatewayTest {
             }
         }
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
-            Socket("127.0.0.1", Socks5Gateway.DEFAULT_PORT).use { socket ->
+            Socket("127.0.0.1", port).use { socket ->
                 val input = DataInputStream(socket.getInputStream())
                 val output = DataOutputStream(socket.getOutputStream())
                 assertTrue(authenticate(input, output, "linkbridge", "123456"))
@@ -75,15 +74,14 @@ class Socks5GatewayTest {
     @Test
     fun wrongPasswordIsRejected() {
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
-            Socket("127.0.0.1", Socks5Gateway.DEFAULT_PORT).use { socket ->
+            Socket("127.0.0.1", port).use { socket ->
                 val input = DataInputStream(socket.getInputStream())
                 val output = DataOutputStream(socket.getOutputStream())
                 assertFalse(authenticate(input, output, "linkbridge", "000000"))
@@ -98,15 +96,14 @@ class Socks5GatewayTest {
     @Test
     fun methodOtherThanUserPassIsRejected() {
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
-            Socket("127.0.0.1", Socks5Gateway.DEFAULT_PORT).use { socket ->
+            Socket("127.0.0.1", port).use { socket ->
                 val input = DataInputStream(socket.getInputStream())
                 val output = DataOutputStream(socket.getOutputStream())
                 // Offer only "no authentication": not acceptable here.
@@ -123,15 +120,14 @@ class Socks5GatewayTest {
     @Test
     fun unsupportedCommandRepliesCommandNotSupported() {
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
-            Socket("127.0.0.1", Socks5Gateway.DEFAULT_PORT).use { socket ->
+            Socket("127.0.0.1", port).use { socket ->
                 val input = DataInputStream(socket.getInputStream())
                 val output = DataOutputStream(socket.getOutputStream())
                 assertTrue(authenticate(input, output, "linkbridge", "123456"))
@@ -170,15 +166,14 @@ class Socks5GatewayTest {
         }
 
         val gateway = Socks5Gateway(
-            port = Socks5Gateway.DEFAULT_PORT,
+            port = 0,
             pairingCode = "123456",
             advertisedHost = "127.0.0.1"
         )
-        gateway.start()
+        val port = gateway.startAndAwait()
 
         try {
-            waitForPort(Socks5Gateway.DEFAULT_PORT)
-            Socket("127.0.0.1", Socks5Gateway.DEFAULT_PORT).use { control ->
+            Socket("127.0.0.1", port).use { control ->
                 val input = DataInputStream(control.getInputStream())
                 val output = DataOutputStream(control.getOutputStream())
                 assertTrue(authenticate(input, output, "linkbridge", "123456"))
@@ -270,14 +265,4 @@ class Socks5GatewayTest {
         return input.readUnsignedByte() == 0
     }
 
-    private fun waitForPort(port: Int) {
-        repeat(50) {
-            try {
-                Socket("127.0.0.1", port).use { return }
-            } catch (_: Exception) {
-                Thread.sleep(20)
-            }
-        }
-        error("Gateway did not start")
-    }
 }
