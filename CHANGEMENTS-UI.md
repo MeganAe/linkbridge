@@ -96,9 +96,9 @@ réseau n'a été déplacée. Les seules nouveautés d'état sont visuelles et v
 
 ### A4. Mise en page
 
-- `App.kt` (réécrit) : barre latérale de 210 dp, réduite à 56 dp sous 900 dp de large avec
+- `App.kt` (réécrit) : barre latérale de 190 dp, réduite à 48 dp sous 900 dp de large avec
   infobulles (`HoverTooltip`), zone de contenu plafonnée à 1000 dp et centrée, barre d'état de
-  28 dp en bas.
+  24 dp en bas.
 - `Widgets.kt` (nouveau) : cartes de section, champs compacts, boutons de 36 dp, journal avec
   barre de défilement permanente, grille à deux colonnes, infobulle, texte tronqué avec infobulle.
 - `Theme.kt` (nouveau) : palette de marque inchangée, typographie Inter, formes, barre de
@@ -107,7 +107,8 @@ réseau n'a été déplacée. Les seules nouveautés d'état sont visuelles et v
   interrupteurs retrouvent une densité de bureau.
 - Deux colonnes au-dessus de 900 dp, une seule en dessous ; les deux valeurs de seuil vivent dans
   `DesktopMetrics` (`Theme.kt`).
-- Densité : titres 18 à 20 sp, corps 13 à 14 sp, boutons 36 dp, champs 38 dp.
+- Densité : titres 12 à 14 sp, corps 11 à 12 sp, boutons 30 dp, champs 32 dp (voir la section 9,
+  qui resserre encore la première version).
 - Survol et focus : `handCursor()` sur les éléments cliquables, curseur de texte sur les champs,
   focus Material 3 conservé ; l'ordre de tabulation suit l'ordre de composition, de la barre
   latérale vers le contenu.
@@ -378,3 +379,84 @@ Aucune version de Kotlin (2.0.21), Compose (1.7.3), AGP (8.7.3) ou Gradle (8.9) 
    propres au desktop et à Android ont été réécrits, comme le demande le chantier D1.
 8. **Le module `core` n'a pas été touché**, ni ses tests, ni la logique réseau, ni la logique de
    `DesktopAppState`.
+
+
+## 9. Tour 2 — sobriété du desktop et guide mobile
+
+Deux retours après essai de la première version : le desktop restait « trop générique », et sur
+mobile un nouvel utilisateur ne savait pas qu'il faut activer le Wi‑Fi.
+
+### 9.1 Desktop : moins de décor, plus de densité
+
+`desktop/.../Theme.kt`, `Widgets.kt`, `App.kt`, `ShareScreen.kt`, `ConnectScreen.kt`,
+`AppsScreen.kt`, `Dialogs.kt`
+
+1. **Aucun angle arrondi.** Tous les rayons Material 3 sont à zéro (`RoundedCornerShape(0.dp)` ;
+   `RectangleShape` n'est pas accepté dans `Shapes`, qui exige un `CornerBasedShape`). Boutons,
+   champs, cartes, journal, barre de défilement : tout est rectangle.
+2. **Pas d'ombre.** Les boutons sont à élévation nulle et les cartes n'ont plus de `Card`
+   flottante : un cadre d'un pixel, comme un panneau d'utilitaire.
+3. **Moins de violet.** Le violet ne sert plus qu'aux liens cliquables. La page active est un
+   fond gris clair avec un trait vertical de 2 dp à gauche ; les boutons principaux sont en Ink ;
+   les cartes colorées se limitent à Butter pour le code de liaison et Mint pour le proxy local.
+   `primary` du thème est maintenant Ink, pas Purple.
+4. **Textes plus petits.** Titres 12 à 14 sp, corps 11 à 12 sp, libellés 10 à 11 sp, graisses
+   essentiellement Medium et SemiBold. Inter est appliquée partout comme avant.
+5. **Sans badges ni pastilles.** `StatusDot` a disparu, ainsi que les coches et les mots
+   « actif » / « inactif » en pastille. L'information passe par une ligne `État` en texte
+   (`InfoLine`) dans chaque section, et par la barre d'état en texte simple
+   (`Relais : actif | Proxy local : arrêté | Proxy Windows : indisponible`). Le vert de
+   confirmation reste utilisé uniquement pour le mot « actif ».
+6. **Contrôles plus compacts.** `LocalMinimumInteractiveComponentSize` ramené à 28 dp, boutons de
+   30 dp, champs de 32 dp, barre latérale de 190 dp, en-tête de page dans une bande grise de
+   même teinte que les barres.
+
+### 9.2 Android : guide et carte de préparation
+
+Nouveau fichier `app/src/main/java/com/linkbridge/app/Guide.kt` (fichier de composables pur,
+aucune logique réseau) et ajouts dans `WifiDirectController.kt` et `MainActivity.kt`.
+
+1. **Le Wi‑Fi est surveillé.** `WifiDirectController` expose `wifiEnabled()` et remonte chaque
+   changement d'état via un nouveau rappel `onWifiState`. `MainActivity` le relit aussi dans
+   `onResume`, donc l'affichage se met à jour au retour des réglages Android.
+2. **Carte « Avant de commencer »** sur l'écran d'accueil : trois points, dont le deuxième dit
+   explicitement que le partage de connexion et le point d'accès ne servent à rien ici.
+   Si le Wi‑Fi est éteint, la carte devient jaune, s'intitule « Le Wi‑Fi est désactivé » et
+   propose « Ouvrir les réglages Wi‑Fi », qui lance `Settings.ACTION_WIFI_SETTINGS`.
+3. **Guide de démarrage** montré au premier lancement, puis accessible par le bouton Guide de la
+   barre du haut et par la carte : ce qu'il faut savoir, les quatre étapes du téléphone A, les six
+   étapes du téléphone B, un dépannage en quatre points, et la partie depuis un ordinateur. Le
+   guide prévient aussi que le Wi‑Fi peut afficher « pas d'Internet » alors que tout fonctionne,
+   et que le VPN doit être autorisé.
+4. **Mémorisation locale** du fait que le guide a déjà été montré, dans les préférences
+   `linkbridge_guide` : le guide ne revient pas à chaque lancement, et rien ne sort du téléphone.
+5. **Garde-fou** sur « Partager » : si le Wi‑Fi est éteint, le partage ne démarre pas et le
+   message « Active le Wi‑Fi, puis appuie de nouveau sur Partager » s'affiche.
+6. Ajouts dans `MainActivity.kt`, sans toucher à la logique : deux états d'affichage (`wifiOn`,
+   `showGuide`), deux méthodes (`openWifiSettings()`, `dismissGuide()`), un `onResume()`, et les
+   paramètres correspondants passés au composable.
+
+### 9.3 Vérifications refaites pour ce tour
+
+- Dans l'arbre de travail : `gradle :core:test :app:assembleDebug :desktop:createDistributable`
+  passent tous les trois (APK de 18,9 Mo avec le guide et les polices).
+- Le zip a été réappliqué sur une copie propre du dépôt puis recompilé :
+  `:core:test`, `:app:compileDebugKotlin` et `:app:processDebugResources` passent,
+  `:desktop:createDistributable` passe. La seule étape qui échoue dans le bac à sable est
+  `:app:mergeExtDexDebug`, qui tue le démon Gradle faute de mémoire disponible ; aucune erreur
+  Kotlin n'est produite, et cette même tâche passe dans l'arbre de travail. C'est donc une
+  limite de la machine, pas du code.
+- Interface desktop relancée depuis l'app-image jpackage : fenêtre 1040 x 700 centrée, angles
+  droits partout, aucun débordement en 880 px de large comme en 1040 px.
+- Alignement mesuré au pixel sur la capture en 880 px : le bloc coloré et les cartes blanches
+  occupent exactement la même largeur (346 à 1142 px), et en 1040 px les deux colonnes vont de
+  488 à 887 et de 902 à 1302, centrées dans la zone de contenu.
+
+### 9.4 Points non vérifiés pour ce tour
+
+- Le guide et la carte de préparation n'ont pas été exécutés sur un appareil Android : mise en
+  page du dialogue, lecture des étapes, ouverture des réglages Wi‑Fi et comportement au retour.
+- L'état du Wi‑Fi n'a pas été testé sur un appareil où l'unique connexion est la 4G sans Wi‑Fi
+  allumé, ni sur Android 8, où `Settings.ACTION_WIFI_SETTINGS` s'ouvre normalement mais où le
+  chemin exact peut varier.
+- Le rendu de la densité resserrée n'a pas été vu sur un vrai écran Windows à 125 % et 150 %.

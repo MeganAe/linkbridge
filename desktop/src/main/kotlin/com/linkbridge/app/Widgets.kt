@@ -1,12 +1,12 @@
 package com.linkbridge.app
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,20 +23,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,8 +42,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.TextStyle
@@ -57,23 +54,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
-/** Ligne d'état d'une carte : rond coloré puis texte, jamais comprimée par un bouton. */
-@Composable
-fun StatusLine(active: Boolean, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(if (active) LinkBridgeTheme.Success else LinkBridgeTheme.Outline)
-        Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-/** Petit rond d'état coloré, utilisé dans la barre d'état et les en-têtes de carte. */
-@Composable
-fun StatusDot(color: Color, modifier: Modifier = Modifier) {
-    Box(modifier.size(8.dp).clip(CircleShape).background(color))
-}
-
-/** Carte de section : titre, sous-titre optionnel, action facultative à droite. */
+/**
+ * Bloc de contenu : un titre, un filet, puis le contenu.
+ *
+ * Pas de carte flottante, pas d'ombre, pas d'angle arrondi : un cadre d'un pixel, comme un
+ * panneau d'utilitaire Windows. La bordure reste fine pour que la densité prime sur le décor.
+ */
 @Composable
 fun SectionCard(
     title: String,
@@ -83,35 +69,43 @@ fun SectionCard(
     trailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
+    Surface(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = container),
-        border = BorderStroke(1.dp, LinkBridgeTheme.OutlineSoft),
-        shape = RoundedCornerShape(12.dp)
+        color = container,
+        shape = RectangleShape,
+        border = BorderStroke(1.dp, LinkBridgeTheme.OutlineSoft)
     ) {
-        Column(
-            Modifier.padding(DesktopMetrics.CardPadding),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        Column(Modifier.padding(DesktopMetrics.CardPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                    if (subtitle != null) {
-                        Text(
-                            subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = LinkBridgeTheme.OnSurfaceMuted
-                        )
-                    }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = LinkBridgeTheme.Ink
+                )
+                if (trailing != null) {
+                    Spacer(Modifier.weight(1f))
+                    trailing()
                 }
-                if (trailing != null) trailing()
             }
-            content()
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LinkBridgeTheme.OnSurfaceMuted
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(thickness = 1.dp, color = LinkBridgeTheme.OutlineSoft)
+            Spacer(Modifier.height(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                content()
+            }
         }
     }
 }
 
-/** Champ compact, aligné sur la densité d'un logiciel de bureau. */
+/** Champ compact, sans arrondi, aligné sur la densité d'un logiciel de bureau. */
 @Composable
 fun DesktopTextField(
     value: String,
@@ -136,30 +130,33 @@ fun DesktopTextField(
         },
         textStyle = MaterialTheme.typography.bodyMedium,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        shape = RoundedCornerShape(8.dp)
+        shape = RectangleShape
     )
 }
 
-/** Bouton principal, hauteur fixe pour que toutes les rangées d'actions s'alignent. */
+/** Bouton principal : fond Ink, texte blanc, aucun relief. */
 @Composable
 fun PrimaryActionButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    container: Color = LinkBridgeTheme.Purple
+    container: Color = LinkBridgeTheme.Ink
 ) {
     Button(
         onClick = onClick,
         modifier = modifier.heightIn(min = DesktopMetrics.ButtonHeight),
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
+        shape = RectangleShape,
+        elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp, 0.dp, 0.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp),
         colors = ButtonDefaults.buttonColors(containerColor = container, contentColor = Color.White)
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
+/** Bouton secondaire : un filet d'un pixel, rien d'autre. */
 @Composable
 fun SecondaryActionButton(
     text: String,
@@ -171,7 +168,9 @@ fun SecondaryActionButton(
         onClick = onClick,
         modifier = modifier.heightIn(min = DesktopMetrics.ButtonHeight),
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp)
+        shape = RectangleShape,
+        border = BorderStroke(1.dp, LinkBridgeTheme.Outline),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -198,7 +197,6 @@ fun LogView(
         modifier
             .fillMaxWidth()
             .height(height)
-            .clip(RoundedCornerShape(10.dp))
             .background(LinkBridgeTheme.Ink)
     ) {
         Column(
@@ -206,13 +204,13 @@ fun LogView(
                 .fillMaxWidth()
                 .height(height)
                 .verticalScroll(scroll)
-                .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 22.dp),
+                .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 20.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
             if (lines.isEmpty()) {
                 Text(
                     emptyText,
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = Color.White.copy(alpha = 0.65f),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -275,20 +273,20 @@ fun HoverTooltip(
         tooltip = {
             Surface(
                 color = LinkBridgeTheme.Ink,
-                shape = RoundedCornerShape(6.dp),
-                shadowElevation = 4.dp
+                shape = RectangleShape,
+                shadowElevation = 2.dp
             ) {
                 Text(
                     text,
                     color = Color.White,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                 )
             }
         },
         modifier = modifier,
         delayMillis = 400,
-        tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(0.dp, 18.dp))
+        tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(0.dp, 16.dp))
     ) {
         content()
     }
@@ -324,8 +322,8 @@ fun SingleLineText(
 fun Modifier.handCursor(): Modifier = this.pointerHoverIcon(PointerIcon.Hand)
 
 /**
- * Texte tronqué sur une seule ligne. L'infobulle n'apparaît que si le texte a réellement
- * été coupé, ce qui évite un décalage quand le nom tient dans la largeur.
+ * Texte tronqué sur une seule ligne. L'infobulle n'apparaît que si le texte a réellement été
+ * coupé, ce qui évite un décalage quand le nom tient dans la largeur.
  */
 @Composable
 fun TruncatedTextWithTooltip(
@@ -347,4 +345,51 @@ fun TruncatedTextWithTooltip(
             onTextLayout = { result -> truncated = result.hasVisualOverflow }
         )
     }
+}
+
+/**
+ * Ligne d'information d'une section : le libellé, puis la valeur.
+ * Aucun badge, aucun rond coloré : une phrase, comme dans un journal d'application.
+ */
+@Composable
+fun InfoLine(label: String, value: String, valueColor: Color = Color.Unspecified) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = LinkBridgeTheme.OnSurfaceMuted,
+            modifier = Modifier.width(112.dp)
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = valueColor,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+/** Texte d'appoint, utilisé pour les explications longues. */
+@Composable
+fun HelpText(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        modifier = modifier,
+        style = MaterialTheme.typography.bodySmall,
+        color = LinkBridgeTheme.OnSurfaceMuted
+    )
+}
+
+/** Ligne cliquable discrète, réservée aux liens. */
+@Composable
+fun LinkText(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .handCursor()
+            .padding(vertical = 2.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = LinkBridgeTheme.Purple
+    )
 }

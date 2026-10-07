@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pDeviceList
@@ -20,7 +21,8 @@ class WifiDirectController(
     private val onStatus: (String) -> Unit,
     private val onPeers: (List<WifiP2pDevice>) -> Unit,
     private val onConnectionInfo: (WifiP2pInfo) -> Unit,
-    private val onGroupInfo: (ssid: String, passphrase: String?) -> Unit = { _, _ -> }
+    private val onGroupInfo: (ssid: String, passphrase: String?) -> Unit = { _, _ -> },
+    private val onWifiState: (Boolean) -> Unit = {}
 ) {
     private val manager = context.getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
     private val channel = manager.initialize(context, Looper.getMainLooper(), null)
@@ -35,6 +37,9 @@ class WifiDirectController(
                         WifiP2pManager.EXTRA_WIFI_STATE,
                         WifiP2pManager.WIFI_P2P_STATE_DISABLED
                     ) == WifiP2pManager.WIFI_P2P_STATE_ENABLED
+                    // Le Wi-Fi est indispensable à Wi-Fi Direct : l'écran d'accueil s'en sert
+                    // pour prévenir avant même que l'utilisateur essaie quelque chose.
+                    onWifiState(enabled)
                     if (!enabled) onStatus("Active le Wi-Fi pour continuer")
                 }
 
@@ -52,6 +57,15 @@ class WifiDirectController(
                 }
             }
         }
+    }
+
+    /** État du Wi-Fi au moment de l'appel, sans attendre un changement système. */
+    @Suppress("DEPRECATION")
+    fun wifiEnabled(): Boolean = try {
+        val manager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        manager.isWifiEnabled
+    } catch (_: Throwable) {
+        true
     }
 
     fun register() {

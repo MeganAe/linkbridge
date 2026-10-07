@@ -1,7 +1,6 @@
 package com.linkbridge.app
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.material3.MaterialTheme
@@ -31,10 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -43,12 +38,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
 /**
- * Fenêtre principale, organisée comme un logiciel de bureau :
+ * Fenêtre principale, organisée comme un utilitaire de bureau :
  *
  * - barre latérale de navigation à gauche, réduite à des icônes sous 900 dp de large ;
- * - zone de contenu limitée à 1000 dp, avec ses marges et une barre de défilement visible ;
+ * - zone de contenu plafonnée à 1000 dp, avec ses marges et une barre de défilement visible ;
  * - cartes sur deux colonnes au-dessus de 900 dp, une seule en dessous ;
- * - barre d'état en bas, qui résume le relais, le proxy local et le proxy Windows.
+ * - barre d'état en bas, en texte simple.
  */
 @Composable
 fun App(state: DesktopAppState, ui: DesktopUiState) {
@@ -60,7 +55,7 @@ fun App(state: DesktopAppState, ui: DesktopUiState) {
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.weight(1f).fillMaxWidth()) {
                         Sidebar(state = state, ui = ui, collapsed = !twoColumns)
-                        Box(Modifier.width(1.dp).fillMaxHeight().background(LinkBridgeTheme.OutlineSoft))
+                        Box(Modifier.width(1.dp).fillMaxHeight().background(LinkBridgeTheme.Outline))
                         ContentArea(state = state, ui = ui, twoColumns = twoColumns)
                     }
                     StatusBar(state = state, ui = ui)
@@ -70,7 +65,7 @@ fun App(state: DesktopAppState, ui: DesktopUiState) {
     }
 }
 
-/** Barre latérale : 210 dp avec libellés, 56 dp en icônes seules sous 900 dp. */
+/** Barre latérale : 190 dp avec libellés, 48 dp en icônes seules sous 900 dp. */
 @Composable
 private fun Sidebar(state: DesktopAppState, ui: DesktopUiState, collapsed: Boolean) {
     val width = if (collapsed) DesktopMetrics.SidebarRailWidth else DesktopMetrics.SidebarWidth
@@ -78,24 +73,29 @@ private fun Sidebar(state: DesktopAppState, ui: DesktopUiState, collapsed: Boole
         Modifier
             .width(width)
             .fillMaxHeight()
-            .background(LinkBridgeTheme.SurfaceAlt)
-            .padding(vertical = 12.dp)
+            .background(LinkBridgeTheme.Chrome)
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = if (collapsed) 0.dp else 14.dp),
+                .padding(
+                    start = if (collapsed) 0.dp else 12.dp,
+                    end = if (collapsed) 0.dp else 12.dp,
+                    top = 10.dp,
+                    bottom = 10.dp
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.Start
         ) {
-            BrandMark(
-                modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)),
-                size = 64
-            )
+            BrandMark(modifier = Modifier.size(22.dp).alpha(0.95f), size = 64)
             if (!collapsed) {
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(8.dp))
                 Column {
-                    Text(LinkBridgeInfo.NAME, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        LinkBridgeInfo.NAME,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Text(
                         "Version ${LinkBridgeInfo.version}",
                         style = MaterialTheme.typography.labelSmall,
@@ -105,14 +105,13 @@ private fun Sidebar(state: DesktopAppState, ui: DesktopUiState, collapsed: Boole
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(LinkBridgeTheme.Outline))
 
         DesktopPage.entries.forEach { page ->
             SidebarEntry(
                 page = page,
                 selected = ui.page == page,
                 collapsed = collapsed,
-                relayActive = state.sharing,
                 onClick = { ui.open(page) }
             )
         }
@@ -120,25 +119,28 @@ private fun Sidebar(state: DesktopAppState, ui: DesktopUiState, collapsed: Boole
         Spacer(Modifier.weight(1f))
 
         if (!collapsed) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(LinkBridgeTheme.Outline))
             Text(
                 LinkBridgeInfo.TAGLINE,
                 style = MaterialTheme.typography.labelSmall,
                 color = LinkBridgeTheme.OnSurfaceMuted,
-                modifier = Modifier.padding(horizontal = 14.dp)
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
             )
         }
     }
 }
 
+/**
+ * Entrée de navigation : un fond gris et un trait vertical à gauche quand la page est active.
+ * Le violet n'est pas utilisé ici, il reste réservé aux liens et au focus.
+ */
 @Composable
 private fun SidebarEntry(
     page: DesktopPage,
     selected: Boolean,
     collapsed: Boolean,
-    relayActive: Boolean,
     onClick: () -> Unit
 ) {
-    val background = if (selected) LinkBridgeTheme.Lavender else Color.Transparent
     val tint = if (selected) LinkBridgeTheme.Ink else LinkBridgeTheme.OnSurfaceMuted
 
     HoverTooltip(
@@ -148,41 +150,45 @@ private fun SidebarEntry(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = if (collapsed) 8.dp else 10.dp, vertical = 2.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(background)
+                .background(if (selected) LinkBridgeTheme.Selection else Color.Transparent)
                 .clickable(onClick = onClick)
-                .handCursor()
-                .padding(horizontal = if (collapsed) 0.dp else 10.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.Start
+                .handCursor(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                PageGlyph(page = page, tint = tint)
-                if (relayActive && page == DesktopPage.SHARE) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(LinkBridgeTheme.Success)
+            Box(
+                Modifier
+                    .width(2.dp)
+                    .height(28.dp)
+                    .background(if (selected) LinkBridgeTheme.Ink else Color.Transparent)
+            )
+            Row(
+                Modifier
+                    .weight(1f)
+                    .padding(
+                        start = if (collapsed) 0.dp else 10.dp,
+                        end = if (collapsed) 0.dp else 10.dp,
+                        top = 7.dp,
+                        bottom = 7.dp
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.Start
+            ) {
+                PageGlyph(page = page, tint = tint, modifier = Modifier.size(14.dp))
+                if (!collapsed) {
+                    Spacer(Modifier.width(9.dp))
+                    Text(
+                        page.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                        color = tint
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        page.shortcutHint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LinkBridgeTheme.OnSurfaceMuted
                     )
                 }
-            }
-            if (!collapsed) {
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    page.label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = tint
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    page.shortcutHint,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LinkBridgeTheme.OnSurfaceMuted
-                )
             }
         }
     }
@@ -191,31 +197,31 @@ private fun SidebarEntry(
 /** Icônes de navigation dessinées à la main : aucune dépendance, aucun fichier à charger. */
 @Composable
 private fun PageGlyph(page: DesktopPage, tint: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier.fillMaxSize()) {
+    Canvas(modifier) {
         val side = size.minDimension
-        val strokeWidth = side * 0.11f
+        val strokeWidth = side * 0.12f
         when (page) {
             DesktopPage.SHARE -> {
                 // Flèche vers le haut : la connexion sort de cette machine.
-                drawLine(tint, Offset(side * 0.5f, side * 0.86f), Offset(side * 0.5f, side * 0.16f), strokeWidth, StrokeCap.Round)
-                drawLine(tint, Offset(side * 0.24f, side * 0.44f), Offset(side * 0.5f, side * 0.14f), strokeWidth, StrokeCap.Round)
-                drawLine(tint, Offset(side * 0.76f, side * 0.44f), Offset(side * 0.5f, side * 0.14f), strokeWidth, StrokeCap.Round)
+                drawLine(tint, Offset(side * 0.5f, side * 0.88f), Offset(side * 0.5f, side * 0.14f), strokeWidth, StrokeCap.Butt)
+                drawLine(tint, Offset(side * 0.22f, side * 0.42f), Offset(side * 0.5f, side * 0.12f), strokeWidth, StrokeCap.Butt)
+                drawLine(tint, Offset(side * 0.78f, side * 0.42f), Offset(side * 0.5f, side * 0.12f), strokeWidth, StrokeCap.Butt)
             }
             DesktopPage.CONNECT -> {
                 // Flèche vers le bas : la connexion arrive sur cette machine.
-                drawLine(tint, Offset(side * 0.5f, side * 0.14f), Offset(side * 0.5f, side * 0.84f), strokeWidth, StrokeCap.Round)
-                drawLine(tint, Offset(side * 0.24f, side * 0.56f), Offset(side * 0.5f, side * 0.86f), strokeWidth, StrokeCap.Round)
-                drawLine(tint, Offset(side * 0.76f, side * 0.56f), Offset(side * 0.5f, side * 0.86f), strokeWidth, StrokeCap.Round)
+                drawLine(tint, Offset(side * 0.5f, side * 0.12f), Offset(side * 0.5f, side * 0.86f), strokeWidth, StrokeCap.Butt)
+                drawLine(tint, Offset(side * 0.22f, side * 0.58f), Offset(side * 0.5f, side * 0.88f), strokeWidth, StrokeCap.Butt)
+                drawLine(tint, Offset(side * 0.78f, side * 0.58f), Offset(side * 0.5f, side * 0.88f), strokeWidth, StrokeCap.Butt)
             }
             DesktopPage.APPS -> {
-                val cell = side * 0.34f
-                val gap = side * 0.14f
+                // Quatre carrés : les applications qui passent par le relais.
+                val cell = side * 0.4f
+                val gap = side * 0.2f
                 listOf(0f to 0f, 1f to 0f, 0f to 1f, 1f to 1f).forEach { (column, row) ->
-                    drawRoundRect(
+                    drawRect(
                         color = tint,
                         topLeft = Offset(column * (cell + gap), row * (cell + gap)),
-                        size = Size(cell, cell),
-                        cornerRadius = CornerRadius(side * 0.08f)
+                        size = androidx.compose.ui.geometry.Size(cell, cell)
                     )
                 }
             }
@@ -223,43 +229,41 @@ private fun PageGlyph(page: DesktopPage, tint: Color, modifier: Modifier = Modif
     }
 }
 
-/** Titre de page fixe, puis contenu défilant limité à 1000 dp. */
-@OptIn(ExperimentalFoundationApi::class)
+/** Titre de page fixe, puis contenu défilant plafonné à 1000 dp. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ContentArea(state: DesktopAppState, ui: DesktopUiState, twoColumns: Boolean) {
     val scroll = rememberScrollState()
     val adapter = rememberScrollbarAdapter(scroll)
 
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxWidth()) {
-            Column(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .widthIn(max = DesktopMetrics.ContentMaxWidth)
-                    .fillMaxWidth()
-                    .padding(
-                        start = DesktopMetrics.PagePadding,
-                        end = DesktopMetrics.PagePadding,
-                        top = 16.dp,
-                        bottom = 10.dp
-                    )
-            ) {
-                Text(ui.page.label, style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    ui.page.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LinkBridgeTheme.OnSurfaceMuted
-                )
-            }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(LinkBridgeTheme.Chrome)
+                .padding(horizontal = DesktopMetrics.PagePadding, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                ui.page.label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                ui.page.subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = LinkBridgeTheme.OnSurfaceMuted
+            )
         }
-        SoftDivider()
+        Box(Modifier.fillMaxWidth().height(1.dp).background(LinkBridgeTheme.Outline))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(scroll)
-                    .padding(top = 14.dp, bottom = 18.dp)
+                    .padding(vertical = 14.dp)
             ) {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                     Column(
@@ -288,7 +292,7 @@ private fun ContentArea(state: DesktopAppState, ui: DesktopUiState, twoColumns: 
     }
 }
 
-/** Barre d'état : relais, proxy local, proxy Windows, version et notes temporaires. */
+/** Barre d'état en texte simple : aucun badge, aucune pastille. */
 @Composable
 private fun StatusBar(state: DesktopAppState, ui: DesktopUiState) {
     LaunchedEffect(ui.noticeId) {
@@ -298,33 +302,37 @@ private fun StatusBar(state: DesktopAppState, ui: DesktopUiState) {
         }
     }
 
-    SoftDivider()
+    Box(Modifier.fillMaxWidth().height(1.dp).background(LinkBridgeTheme.Outline))
     Row(
         Modifier
             .fillMaxWidth()
             .height(DesktopMetrics.StatusBarHeight)
-            .background(LinkBridgeTheme.SurfaceAlt)
-            .padding(horizontal = 14.dp),
+            .background(LinkBridgeTheme.Chrome)
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        StatusItem(label = "Relais", active = state.sharing)
-        StatusSeparator()
-        StatusItem(label = "Proxy local", active = state.proxyRunning)
-        StatusSeparator()
-        StatusItem(
-            label = "Proxy Windows",
-            active = state.systemProxyOn,
-            available = state.systemProxySupported
-        )
+        StatusWord("Relais", if (state.sharing) "actif" else "arrêté", state.sharing)
+        Separator()
+        StatusWord("Proxy local", if (state.proxyRunning) "actif" else "arrêté", state.proxyRunning)
+        Separator()
+        if (state.systemProxySupported) {
+            StatusWord("Proxy Windows", if (state.systemProxyOn) "actif" else "arrêté", state.systemProxyOn)
+        } else {
+            Text(
+                "Proxy Windows : indisponible",
+                style = MaterialTheme.typography.labelMedium,
+                color = LinkBridgeTheme.OnSurfaceMuted
+            )
+        }
         Spacer(Modifier.weight(1f))
         ui.notice?.let { message ->
             Text(
                 message,
                 style = MaterialTheme.typography.labelMedium,
-                color = LinkBridgeTheme.Purple,
+                color = LinkBridgeTheme.Ink,
                 maxLines = 1
             )
-            StatusSeparator()
+            Separator()
         }
         Text(
             "${LinkBridgeInfo.NAME} ${LinkBridgeInfo.version}",
@@ -335,28 +343,20 @@ private fun StatusBar(state: DesktopAppState, ui: DesktopUiState) {
 }
 
 @Composable
-private fun StatusItem(label: String, active: Boolean, available: Boolean = true) {
-    StatusDot(
-        when {
-            !available -> LinkBridgeTheme.Outline
-            active -> LinkBridgeTheme.Success
-            else -> LinkBridgeTheme.Outline
-        }
-    )
-    Spacer(Modifier.width(6.dp))
+private fun StatusWord(label: String, word: String, active: Boolean) {
     Text(
-        "$label\u202F: ${if (!available) "indisponible" else if (active) "actif" else "inactif"}",
+        "$label : $word",
         style = MaterialTheme.typography.labelMedium,
-        color = LinkBridgeTheme.Ink
+        color = if (active) LinkBridgeTheme.Success else LinkBridgeTheme.OnSurfaceMuted
     )
 }
 
 @Composable
-private fun StatusSeparator() {
-    Box(
-        Modifier
-            .padding(horizontal = 12.dp)
-            .size(1.dp, 14.dp)
-            .background(LinkBridgeTheme.Outline)
+private fun Separator() {
+    Text(
+        "|",
+        style = MaterialTheme.typography.labelSmall,
+        color = LinkBridgeTheme.Outline,
+        modifier = Modifier.padding(horizontal = 10.dp)
     )
 }

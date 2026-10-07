@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -47,13 +46,9 @@ fun ShareScreen(state: DesktopAppState, wide: Boolean, onCopyCode: () -> Unit) {
                 }
             ) {
                 if (state.interfaces.isEmpty()) {
-                    Text(
-                        "Aucune interface réseau détectée.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LinkBridgeTheme.OnSurfaceMuted
-                    )
+                    HelpText("Aucune interface réseau détectée. Vérifie ta connexion, puis actualise.")
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column {
                         state.interfaces.forEach { iface ->
                             NetworkIfaceRow(
                                 iface = iface,
@@ -68,14 +63,10 @@ fun ShareScreen(state: DesktopAppState, wide: Boolean, onCopyCode: () -> Unit) {
 
             SectionCard(
                 title = "Relais",
-                subtitle = if (state.sharing) {
-                    "Le partage est actif. Le code reste valable jusqu'à l'arrêt."
-                } else {
-                    "Démarre le relais quand le téléphone ou l'autre PC est prêt."
-                }
+                subtitle = "Le relais distribue la connexion de ce PC aux appareils qui présentent le bon code."
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PrimaryActionButton(
@@ -89,21 +80,22 @@ fun ShareScreen(state: DesktopAppState, wide: Boolean, onCopyCode: () -> Unit) {
                         enabled = state.sharing
                     )
                 }
-                StatusLine(
-                    active = state.sharing,
-                    text = if (state.sharing) {
-                        if (state.clientCount == 1) "Actif, 1 client connecté"
-                        else "Actif, ${state.clientCount} clients connectés"
+                InfoLine(
+                    label = "État",
+                    value = if (state.sharing) {
+                        if (state.clientCount == 0) "En écoute, aucun appareil connecté"
+                        else if (state.clientCount == 1) "En écoute, 1 appareil connecté"
+                        else "En écoute, ${state.clientCount} appareils connectés"
                     } else {
                         "Arrêté"
-                    }
+                    },
+                    valueColor = if (state.sharing) LinkBridgeTheme.Success else LinkBridgeTheme.OnSurfaceMuted
                 )
                 state.shareError?.let { message ->
                     Text(
                         message,
-                        color = LinkBridgeTheme.Error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LinkBridgeTheme.Error
                     )
                 }
             }
@@ -111,36 +103,25 @@ fun ShareScreen(state: DesktopAppState, wide: Boolean, onCopyCode: () -> Unit) {
         right = {
             SectionCard(
                 title = "Code de liaison",
-                subtitle = "Communique ces informations au téléphone B ou à l'autre PC.",
+                subtitle = "À saisir sur le téléphone B ou sur l'autre PC, avec l'adresse ci-dessous.",
                 container = LinkBridgeTheme.Butter
             ) {
                 Text(
                     state.pairingCode.chunked(3).joinToString(" "),
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.SemiBold,
                     color = LinkBridgeTheme.Ink,
-                    letterSpacing = 6.sp
+                    letterSpacing = 5.sp
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Relais\u202F: ${state.relayEndpoint ?: "aucune interface sélectionnée"}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Text(
-                    "Utilisateur\u202F: ${Socks5Gateway.USERNAME}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LinkBridgeTheme.OnSurfaceMuted
+                InfoLine(
+                    label = "Relais",
+                    value = state.relayEndpoint ?: "aucune interface sélectionnée"
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PrimaryActionButton(
-                        text = "Copier le code",
-                        onClick = onCopyCode,
-                        container = LinkBridgeTheme.Ink
-                    )
+                InfoLine(label = "Utilisateur", value = Socks5Gateway.USERNAME)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryActionButton(text = "Copier le code", onClick = onCopyCode)
                     SecondaryActionButton(
-                        text = "Régénérer le code",
+                        text = "Régénérer",
                         onClick = { state.regenerateCode() },
                         enabled = !state.sharing
                     )
@@ -149,7 +130,7 @@ fun ShareScreen(state: DesktopAppState, wide: Boolean, onCopyCode: () -> Unit) {
 
             SectionCard(
                 title = "Journal des connexions",
-                subtitle = "Deux cents dernières lignes, rien n'est écrit sur le disque.",
+                subtitle = "Les deux cents dernières lignes. Rien n'est écrit sur le disque.",
                 trailing = {
                     SecondaryActionButton(
                         text = "Effacer",
@@ -164,7 +145,7 @@ fun ShareScreen(state: DesktopAppState, wide: Boolean, onCopyCode: () -> Unit) {
     )
 }
 
-/** Une interface réseau sur une seule ligne propre : nom tronqué avec infobulle, adresse à droite. */
+/** Une interface réseau sur une seule ligne : nom tronqué avec infobulle, adresse à droite. */
 @Composable
 private fun NetworkIfaceRow(
     iface: NetworkIface,
@@ -175,18 +156,19 @@ private fun NetworkIfaceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 30.dp)
+            .heightIn(min = 26.dp)
             .clickable(enabled = enabled, onClick = onSelect)
             .handCursor()
-            .padding(end = 6.dp),
+            .padding(end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RadioButton(selected = selected, onClick = onSelect, enabled = enabled)
+        Spacer(Modifier.width(4.dp))
         TruncatedTextWithTooltip(
             text = iface.name,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
-            weight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            weight = if (selected) FontWeight.Medium else FontWeight.Normal
         )
         Spacer(Modifier.width(12.dp))
         Text(

@@ -9,6 +9,7 @@ import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -105,6 +106,13 @@ class MainActivity : ComponentActivity() {
     // Host en attente du consentement VPN avant de démarrer le tunnel.
     private var pendingManual: Pair<String, String>? = null
 
+    // Wi-Fi activé ou non : c'est le prérequis que les nouveaux utilisateurs ignorent, donc
+    // l'écran d'accueil le vérifie et propose d'ouvrir les réglages.
+    private var wifiOn by mutableStateOf(true)
+
+    // Guide de démarrage : montré une seule fois, puis rappelé par le bouton Guide.
+    private var showGuide by mutableStateOf(false)
+
     // Applications qui passent par la connexion reçue (téléphone B) : toutes,
     // ou seulement celles que l'utilisateur a cochées.
     private var restrictApps by mutableStateOf(false)
@@ -151,9 +159,12 @@ class MainActivity : ComponentActivity() {
             onGroupInfo = { ssid, passphrase ->
                 groupSsid = ssid
                 groupPassphrase = passphrase
-            }
+            },
+            onWifiState = { enabled -> wifiOn = enabled }
         )
         wifiDirect.register()
+        wifiOn = wifiDirect.wifiEnabled()
+        showGuide = !GuideStore.hasSeen(this)
 
         val saved = AppSelectionStore.load(this)
         restrictApps = saved.restrict
@@ -167,6 +178,11 @@ class MainActivity : ComponentActivity() {
             LinkBridgeApp(
                 role = role,
                 status = status,
+                wifiOn = wifiOn,
+                showGuide = showGuide,
+                onDismissGuide = ::dismissGuide,
+                onOpenGuide = { showGuide = true },
+                onOpenWifiSettings = ::openWifiSettings,
                 pairingCode = pairingCode,
                 pairingInput = pairingInput,
                 peers = peers,
@@ -215,6 +231,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun beginSharing() {
+        if (!wifiOn) {
+            status = "Active le Wi-Fi, puis appuie de nouveau sur Partager"
+            showGuide = !GuideStore.hasSeen(this)
+            return
+        }
         role = LinkRole.SHARE
         pairingCode = PairingCode.generate()
         peers = emptyList()
@@ -326,6 +347,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // L'utilisateur a pu activer le Wi-Fi depuis les réglages Android.
+        wifiOn = wifiDirect.wifiEnabled()
+    }
+
+    /** Ouvre la page Wi-Fi des réglages Android, pour que le prérequis soit à un appui. */
+    private fun openWifiSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+        } catch (_: Exception) {
+            status = "Ouvre les réglages Android, puis active le Wi-Fi"
+        }
+    }
+
+    private fun dismissGuide() {
+        showGuide = false
+        GuideStore.markSeen(this)
+    }
+
     override fun onDestroy() {
         wifiDirect.unregister()
         super.onDestroy()
@@ -337,6 +378,11 @@ class MainActivity : ComponentActivity() {
 private fun LinkBridgeApp(
     role: LinkRole?,
     status: String,
+    wifiOn: Boolean,
+    showGuide: Boolean,
+    onDismissGuide: () -> Unit,
+    onOpenGuide: () -> Unit,
+    onOpenWifiSettings: () -> Unit,
     pairingCode: String,
     pairingInput: String,
     peers: List<WifiP2pDevice>,
@@ -388,6 +434,7 @@ private fun LinkBridgeApp(
         typography = LinkBridgeTypography
     ) {
         if (showAbout) AboutDialog(onDismiss = { showAbout = false })
+        if (showGuide) GuideDialog(onDismiss = onDismissGuide)
         if (showAppPicker) {
             AppPickerDialog(
                 apps = installedApps,
@@ -408,6 +455,7 @@ private fun LinkBridgeApp(
                         }
                     },
                     actions = {
+                        TextButton(onClick = onOpenGuide) { Text("Guide") }
                         IconButton(onClick = { showAbout = true }) {
                             Icon(Icons.Outlined.Info, contentDescription = "À propos")
                         }
@@ -426,6 +474,11 @@ private fun LinkBridgeApp(
                 HeroCard(role = role, status = status)
 
                 if (role == null) {
+                    PreparationCard(
+                        wifiOn = wifiOn,
+                        onOpenWifiSettings = onOpenWifiSettings,
+                        onOpenGuide = onOpenGuide
+                    )
                     Text(
                         "Que veux-tu faire ?",
                         style = MaterialTheme.typography.titleLarge,

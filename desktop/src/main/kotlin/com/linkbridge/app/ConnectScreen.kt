@@ -14,12 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
- * Page « Se connecter » : ce PC utilise le relais d'un téléphone A ou d'un autre PC,
- * à travers un proxy local sans mot de passe destiné aux navigateurs qui ne savent pas
- * s'authentifier en SOCKS5.
+ * Page « Se connecter » : ce PC utilise le relais d'un téléphone A ou d'un autre PC, à travers
+ * un proxy local sans mot de passe destiné aux navigateurs qui ne savent pas s'authentifier
+ * en SOCKS5.
  */
 @Composable
 fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
@@ -30,9 +29,9 @@ fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
         left = {
             SectionCard(
                 title = "Relais distant",
-                subtitle = "Adresse affichée sur l'appareil qui partage la connexion."
+                subtitle = "Ces trois valeurs sont affichées sur l'appareil qui partage la connexion."
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DesktopTextField(
                         value = state.relayHost,
                         onValueChange = { value ->
@@ -63,7 +62,7 @@ fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
                     )
                 }
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PrimaryActionButton(
@@ -71,19 +70,18 @@ fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
                         onClick = { state.runTest() },
                         enabled = !state.testing
                     )
-                }
-                val testMessage = state.testStatus ?: invalid
-                if (testMessage != null) {
-                    Text(
-                        testMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = when {
-                            state.testStatus == null -> LinkBridgeTheme.OnSurfaceMuted
-                            state.testOk -> LinkBridgeTheme.Success
-                            else -> LinkBridgeTheme.Error
-                        },
-                        fontWeight = if (state.testStatus == null) FontWeight.Normal else FontWeight.SemiBold
-                    )
+                    val testMessage = state.testStatus ?: invalid
+                    if (testMessage != null) {
+                        Text(
+                            testMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = when {
+                                state.testStatus == null -> LinkBridgeTheme.OnSurfaceMuted
+                                state.testOk -> LinkBridgeTheme.Success
+                                else -> LinkBridgeTheme.Error
+                            }
+                        )
+                    }
                 }
             }
 
@@ -92,22 +90,20 @@ fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
                 subtitle = "Sans mot de passe, en écoute uniquement sur cette machine.",
                 container = LinkBridgeTheme.Mint
             ) {
-                Text(
-                    "Chrome et Edge ne savent pas s'authentifier sur un proxy SOCKS5. LinkBridge ouvre donc " +
-                        "un proxy local sur ${state.proxyEndpoint}, qui relaie vers le relais distant. Ce proxy " +
-                        "comprend SOCKS5 et HTTP. La page Applications permet de l'activer pour tout le PC ou " +
-                        "de lancer un navigateur déjà réglé.",
-                    style = MaterialTheme.typography.bodyMedium
+                HelpText(
+                    "Chrome et Edge ne savent pas s'authentifier sur un proxy SOCKS5. LinkBridge ouvre " +
+                        "donc un proxy local sur ${state.proxyEndpoint}, qui relaie vers le relais distant. " +
+                        "Ce proxy comprend SOCKS5 et HTTP. La page Applications permet de l'activer pour " +
+                        "tout le PC ou de lancer un navigateur déjà réglé."
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PrimaryActionButton(
                         text = "Démarrer le proxy",
                         onClick = { state.startProxy() },
-                        enabled = !state.proxyRunning,
-                        container = LinkBridgeTheme.Ink
+                        enabled = !state.proxyRunning
                     )
                     SecondaryActionButton(
                         text = "Arrêter",
@@ -115,17 +111,13 @@ fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
                         enabled = state.proxyRunning
                     )
                 }
-                StatusLine(
-                    active = state.proxyRunning,
-                    text = if (state.proxyRunning) "En écoute sur ${state.proxyEndpoint}" else "Arrêté"
+                InfoLine(
+                    label = "État",
+                    value = if (state.proxyRunning) "En écoute sur ${state.proxyEndpoint}" else "Arrêté",
+                    valueColor = if (state.proxyRunning) LinkBridgeTheme.Success else LinkBridgeTheme.OnSurfaceMuted
                 )
                 state.proxyError?.let { message ->
-                    Text(
-                        message,
-                        color = LinkBridgeTheme.Error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = LinkBridgeTheme.Error)
                 }
             }
         },
@@ -147,13 +139,11 @@ fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
                 )
                 BulletLine(
                     "Ligne de commande",
-                    "Tu peux aussi lancer le navigateur avec l'option --proxy-server=\"socks5://127.0.0.1:${Socks5ChainProxy.DEFAULT_PORT}\"."
+                    "Ou lance le navigateur avec l'option --proxy-server=\"socks5://127.0.0.1:${Socks5ChainProxy.DEFAULT_PORT}\"."
                 )
-                Text(
+                HelpText(
                     "Cette version ne crée pas de tunnel système\u202F: UDP et QUIC ne sont pas relayés. " +
-                        "Les sites restent accessibles en TCP, HTTPS compris.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LinkBridgeTheme.OnSurfaceMuted
+                        "Les sites restent accessibles en TCP, HTTPS compris."
                 )
             }
 
@@ -177,15 +167,11 @@ fun ConnectScreen(state: DesktopAppState, wide: Boolean) {
 /** Une puce de documentation : titre court puis explication. */
 @Composable
 private fun BulletLine(title: String, text: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("•", style = MaterialTheme.typography.bodyMedium, color = LinkBridgeTheme.Purple)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("·", style = MaterialTheme.typography.bodyMedium, color = LinkBridgeTheme.Ink)
         Column {
-            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                text,
-                style = MaterialTheme.typography.bodySmall,
-                color = LinkBridgeTheme.OnSurfaceMuted
-            )
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            HelpText(text)
         }
     }
 }
