@@ -54,6 +54,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -102,6 +103,12 @@ class MainActivity : ComponentActivity() {
     // Host en attente du consentement VPN avant de démarrer le tunnel.
     private var pendingManual: Pair<String, String>? = null
 
+    // Applications qui passent par la connexion reçue (téléphone B) : toutes,
+    // ou seulement celles que l'utilisateur a cochées.
+    private var restrictApps by mutableStateOf(false)
+    private var selectedApps by mutableStateOf<Set<String>>(emptySet())
+    private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
+
     private val vpnLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -144,6 +151,14 @@ class MainActivity : ComponentActivity() {
         )
         wifiDirect.register()
 
+        val saved = AppSelectionStore.load(this)
+        restrictApps = saved.restrict
+        selectedApps = saved.packages
+        Thread { installedApps = AppSelectionStore.listLaunchableApps(this) }.apply {
+            name = "linkbridge-apps"
+            start()
+        }
+
         setContent {
             LinkBridgeApp(
                 role = role,
@@ -155,6 +170,17 @@ class MainActivity : ComponentActivity() {
                 manualCode = manualCode,
                 groupSsid = groupSsid,
                 groupPassphrase = groupPassphrase,
+                installedApps = installedApps,
+                selectedApps = selectedApps,
+                restrictApps = restrictApps,
+                onRestrictChange = {
+                    restrictApps = it
+                    saveAppSelection()
+                },
+                onToggleApp = { pkg ->
+                    selectedApps = if (pkg in selectedApps) selectedApps - pkg else selectedApps + pkg
+                    saveAppSelection()
+                },
                 onManualIpChange = { manualIp = it.filter { character -> !character.isWhitespace() } },
                 onManualCodeChange = { manualCode = it.filter { character -> character.isDigit() }.take(6) },
                 onManualConnect = { host, code -> beginManualReceiving(host, code) },
@@ -162,8 +188,8 @@ class MainActivity : ComponentActivity() {
                 onShare = { runWithNearbyPermissions(::beginSharing) },
                 onReceive = { runWithNearbyPermissions(::beginReceiving) },
                 onPeerSelected = { peer ->
-                    if (pairingInput.length == 6) wifiDirect.connect(peer)
-                    else status = "Entre d'abord le code du téléphone A"
+                    if (pairingInput.length != 6) status = "Entre d'abord le code du téléphone A"
+                    else if (appSelectionValid()) wifiDirect.connect(peer)
                 },
                 onStop = ::stopEverything
             )
@@ -215,15 +241,31 @@ class MainActivity : ComponentActivity() {
         else startService(intent)
     }
 
+    private fun saveAppSelection() {
+        AppSelectionStore.save(this, restrictApps, selectedApps)
+    }
+
+    /** Refuse « seulement certaines applications » quand aucune n'est cochée. */
+    private fun appSelectionValid(): Boolean {
+        if (restrictApps && selectedApps.isEmpty()) {
+            status = "Choisis au moins une application, ou repasse sur « Toutes les applications »"
+            return false
+        }
+        return true
+    }
+
     private fun startReceiverVpn(host: String, code: String) {
         if (code.length != 6) {
             status = "Entre le code affiché sur le téléphone A"
             return
         }
+        if (!appSelectionValid()) return
         val intent = Intent(this, VpnTunnelService::class.java)
             .setAction(VpnTunnelService.ACTION_START)
             .putExtra(VpnTunnelService.EXTRA_GATEWAY_HOST, host)
             .putExtra(VpnTunnelService.EXTRA_CODE, code)
+            .putExtra(VpnTunnelService.EXTRA_RESTRICT_APPS, restrictApps)
+            .putStringArrayListExtra(VpnTunnelService.EXTRA_ALLOWED_APPS, ArrayList(selectedApps))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(this, intent)
         else startService(intent)
     }
@@ -239,6 +281,7 @@ class MainActivity : ComponentActivity() {
             status = "Entre l'adresse du relais et le code à 6 chiffres"
             return
         }
+        if (!appSelectionValid()) return
         val intent = VpnService.prepare(this)
         if (intent != null) {
             status = "Autorise LinkBridge à créer la connexion VPN"
@@ -297,6 +340,11 @@ private fun LinkBridgeApp(
     manualCode: String,
     groupSsid: String?,
     groupPassphrase: String?,
+    installedApps: List<InstalledApp>,
+    selectedApps: Set<String>,
+    restrictApps: Boolean,
+    onRestrictChange: (Boolean) -> Unit,
+    onToggleApp: (String) -> Unit,
     onManualIpChange: (String) -> Unit,
     onManualCodeChange: (String) -> Unit,
     onManualConnect: (host: String, code: String) -> Unit,
@@ -325,6 +373,7 @@ private fun LinkBridgeApp(
     )
 
     var showAbout by remember { mutableStateOf(false) }
+    var showAppPicker by remember { mutableStateOf(false) }
     // Back returns to the role menu (and stops sharing/receiving) instead of
     // closing the app. From the menu itself, back exits normally.
     BackHandler(enabled = role != null) { onStop() }
@@ -334,6 +383,14 @@ private fun LinkBridgeApp(
         shapes = expressiveShapes
     ) {
         if (showAbout) AboutDialog(onDismiss = { showAbout = false })
+        if (showAppPicker) {
+            AppPickerDialog(
+                apps = installedApps,
+                selected = selectedApps,
+                onToggle = onToggleApp,
+                onDismiss = { showAppPicker = false }
+            )
+        }
         Scaffold(
             containerColor = LinkBridgeBrand.Background,
             topBar = {
@@ -407,6 +464,10 @@ private fun LinkBridgeApp(
                         onManualIpChange = onManualIpChange,
                         onManualCodeChange = onManualCodeChange,
                         onManualConnect = onManualConnect,
+                        restrictApps = restrictApps,
+                        selectedCount = selectedApps.size,
+                        onRestrictChange = onRestrictChange,
+                        onChooseApps = { showAppPicker = true },
                         onStop = onStop
                     )
                 }
@@ -549,10 +610,39 @@ private fun ReceivePanel(
     onManualIpChange: (String) -> Unit,
     onManualCodeChange: (String) -> Unit,
     onManualConnect: (host: String, code: String) -> Unit,
+    restrictApps: Boolean,
+    selectedCount: Int,
+    onRestrictChange: (Boolean) -> Unit,
+    onChooseApps: () -> Unit,
     onStop: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Connexion sécurisée", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Seulement certaines applications", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (restrictApps) "Seules les applications choisies utilisent la connexion reçue."
+                            else "Toutes les applications utilisent la connexion reçue.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(checked = restrictApps, onCheckedChange = onRestrictChange)
+                }
+                if (restrictApps) {
+                    OutlinedButton(onClick = onChooseApps, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (selectedCount == 0) "Choisir les applications" else "Choisir les applications ($selectedCount)")
+                    }
+                    Text(
+                        "Les autres applications gardent la connexion habituelle de ce téléphone. " +
+                            "Le choix s'applique à la prochaine connexion.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
         OutlinedTextField(
             value = pairingInput,
             onValueChange = onPairingInputChange,

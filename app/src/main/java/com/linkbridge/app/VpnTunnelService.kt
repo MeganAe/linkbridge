@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
@@ -41,12 +42,15 @@ class VpnTunnelService : VpnService() {
             return START_NOT_STICKY
         }
 
+        val restrictApps = intent?.getBooleanExtra(EXTRA_RESTRICT_APPS, false) ?: false
+        val allowedApps = intent?.getStringArrayListExtra(EXTRA_ALLOWED_APPS).orEmpty()
+
         startForegroundCompat()
-        if (tunFd == null) startTunnel(host, code)
+        if (tunFd == null) startTunnel(host, code, restrictApps, allowedApps)
         return START_STICKY
     }
 
-    private fun startTunnel(host: String, code: String) {
+    private fun startTunnel(host: String, code: String, restrictApps: Boolean, allowedApps: List<String>) {
         stopping.set(false)
         val builder = Builder()
             .setSession("LinkBridge")
@@ -57,13 +61,36 @@ class VpnTunnelService : VpnService() {
             .addAddress("fc00::1", 64)
             .addRoute("::", 0)
 
-        // The native tun2socks engine is part of this same application. Its
-        // own SOCKS5 sockets must bypass our VPN or they would loop forever.
-        try {
-            builder.addDisallowedApplication(packageName)
-        } catch (_: Exception) {
-            // The tunnel can still run on devices that do not expose this
-            // per-app exclusion; the protected-network path is attempted.
+        if (restrictApps) {
+            // Only the chosen applications use the tunnel; the others keep the
+            // phone's normal connection. The native engine lives in this
+            // application, which is not in the list, so its own sockets bypass
+            // the VPN and cannot loop.
+            var added = 0
+            for (app in allowedApps) {
+                if (app == packageName) continue
+                try {
+                    builder.addAllowedApplication(app)
+                    added++
+                } catch (_: PackageManager.NameNotFoundException) {
+                    // Application uninstalled since it was chosen: skip it.
+                }
+            }
+            if (added == 0) {
+                // Never fall back to "every application": with no allowed
+                // application Android would route the whole phone.
+                stopSelf()
+                return
+            }
+        } else {
+            // The native tun2socks engine is part of this same application. Its
+            // own SOCKS5 sockets must bypass our VPN or they would loop forever.
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (_: Exception) {
+                // The tunnel can still run on devices that do not expose this
+                // per-app exclusion; the protected-network path is attempted.
+            }
         }
 
         tunFd = builder.establish()
@@ -193,6 +220,8 @@ class VpnTunnelService : VpnService() {
         const val ACTION_STOP = "com.linkbridge.app.vpn.STOP"
         const val EXTRA_GATEWAY_HOST = "gateway_host"
         const val EXTRA_CODE = "pairing_code"
+        const val EXTRA_RESTRICT_APPS = "restrict_apps"
+        const val EXTRA_ALLOWED_APPS = "allowed_apps"
         private const val CHANNEL_ID = "linkbridge_vpn"
         private const val NOTIFICATION_ID = 11
         private const val TUN_MTU = 1400
