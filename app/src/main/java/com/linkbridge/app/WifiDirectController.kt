@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pDeviceList
+import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
@@ -18,7 +19,8 @@ class WifiDirectController(
     private val context: Context,
     private val onStatus: (String) -> Unit,
     private val onPeers: (List<WifiP2pDevice>) -> Unit,
-    private val onConnectionInfo: (WifiP2pInfo) -> Unit
+    private val onConnectionInfo: (WifiP2pInfo) -> Unit,
+    private val onGroupInfo: (ssid: String, passphrase: String?) -> Unit = { _, _ -> }
 ) {
     private val manager = context.getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
     private val channel = manager.initialize(context, Looper.getMainLooper(), null)
@@ -41,6 +43,11 @@ class WifiDirectController(
                 WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                     manager.requestConnectionInfo(channel) { info: WifiP2pInfo ->
                         if (info.groupFormed) onConnectionInfo(info)
+                    }
+                    // The group name and passphrase let a PC join the
+                    // DIRECT-xx-… network from its normal Wi-Fi settings.
+                    manager.requestGroupInfo(channel) { group: WifiP2pGroup? ->
+                        if (group != null) onGroupInfo(group.networkName, groupPassphrase(group))
                     }
                 }
             }
@@ -114,6 +121,19 @@ class WifiDirectController(
     private fun requestPeers() {
         manager.requestPeers(channel) { list: WifiP2pDeviceList ->
             onPeers(list.deviceList.toList())
+        }
+    }
+
+    /** The passphrase exists only on API 27+ and may be hidden by the OEM. */
+    private fun groupPassphrase(group: WifiP2pGroup): String? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            try {
+                group.passphrase
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
         }
     }
 

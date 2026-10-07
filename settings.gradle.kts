@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "LinkBridge"
 include(":app")
+include(":core")
+include(":desktop")

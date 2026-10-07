@@ -1,5 +1,11 @@
 # Architecture LinkBridge
 
+## Modules Gradle
+
+- `core` : code JVM pur partagé — relais SOCKS5 (`Socks5Gateway`), client SOCKS5 (`Socks5Client`), proxy local enchaîné (`Socks5ChainProxy`), code de pairage (`PairingCode`) et leurs tests.
+- `app` : application Android (Wi‑Fi Direct + `VpnService`), dépend de `core`.
+- `desktop` : application bureau Compose Multiplatform (Windows/Linux/macOS, JVM 17), dépend de `core`.
+
 ## Flux réel
 
 ```text

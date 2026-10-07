@@ -20,26 +20,36 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
- * A small, authenticated SOCKS5 gateway that runs on phone A.
+ * A small, authenticated SOCKS5 gateway that runs on phone A or on a PC.
  *
  * It is deliberately bound only to the Wi-Fi Direct group interface by the
  * caller's network topology. The password is the one-time pairing code shown
  * by the app. TCP CONNECT and UDP ASSOCIATE are supported so the VPN side can
  * carry normal browsing, DNS and apps that use UDP.
+ *
+ * [onEvent] receives human-readable connection log lines (never passwords or
+ * pairing codes) for display by the desktop UI.
  */
 class Socks5Gateway(
     private val port: Int,
     private val pairingCode: String,
     private val advertisedHost: String,
-    private val bindHost: String = advertisedHost
+    private val bindHost: String = advertisedHost,
+    private val onEvent: (String) -> Unit = {}
 ) {
     private val running = AtomicBoolean(false)
     private val workers: ExecutorService = Executors.newCachedThreadPool()
+    private val activeClientsCount = AtomicInteger(0)
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
+
+    /** Number of SOCKS5 clients currently being served. */
+    val activeClients: Int
+        get() = activeClientsCount.get()
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -94,11 +104,16 @@ class Socks5Gateway(
     }
 
     private fun handleClient(client: Socket) {
+        activeClientsCount.incrementAndGet()
+        onEvent("Client connecté (${client.inetAddress?.hostAddress ?: "?"})")
         try {
             handleClientUnsafe(client)
         } catch (_: Throwable) {
             // Client disconnects (EOF, reset) and shutdown interrupts are
             // normal; they must never crash the app from a worker thread.
+        } finally {
+            activeClientsCount.decrementAndGet()
+            onEvent("Client déconnecté (${client.inetAddress?.hostAddress ?: "?"})")
         }
     }
 
@@ -176,6 +191,7 @@ class Socks5Gateway(
         upstream.use { remote ->
             writeReply(output, REP_SUCCEEDED, remote.localAddress, remote.localPort)
             output.flush()
+            onEvent("Relais TCP vers ${target.host}:${target.port}")
             // The uplink must read through the buffered handshake stream: it
             // can already hold payload bytes the client pipelined behind the
             // request. Reading the raw socket stream would drop them.
@@ -239,6 +255,7 @@ class Socks5Gateway(
             udp.use { datagramSocket ->
                 writeReply(output, REP_SUCCEEDED, InetAddress.getByName(advertisedHost), datagramSocket.localPort)
                 output.flush()
+                onEvent("Relais UDP associé")
 
                 val clientAddress = control.inetAddress ?: return
                 val routes = ConcurrentHashMap<String, RouteEntry>()

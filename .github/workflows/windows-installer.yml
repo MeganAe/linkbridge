@@ -1,0 +1,96 @@
+name: Installateur Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version de l'application (ex. 0.3.0)"
+        required: true
+        default: "0.3.0"
+  # Permet de valider la chaîne de build sur chaque PR sans publier de release.
+  pull_request:
+
+jobs:
+  build:
+    name: Construire l'installateur
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Déterminer la version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="${{ github.event.inputs.version }}"
+          fi
+          V="${V:-0.3.0}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Exécuter les tests du module core
+        run: gradle --no-daemon --max-workers=2 :core:test
+
+      # La version passe par variable d'environnement : sur Windows, la ligne
+      # de commande PowerShell/cmd coupait -PappVersion=0.3.0 en deux arguments
+      # ("-PappVersion=0" + ".3.0"), ce qui cassait la configuration jpackage.
+      - name: Construire l'app-image avec jpackage
+        env:
+          ORG_GRADLE_PROJECT_appVersion: ${{ steps.version.outputs.version }}
+        run: gradle --no-daemon --max-workers=2 :desktop:createDistributable
+
+      - name: Installer Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compiler l'installateur
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe introuvable après installation de Inno Setup" }
+          & $iscc "/DAppVersion=$env:APP_VERSION" installer\linkbridge.iss
+          if ($LASTEXITCODE -ne 0) { throw "La compilation de l'installateur a échoué" }
+
+      - name: Publier l'installateur en artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinkBridge-Setup-${{ steps.version.outputs.version }}
+          path: dist/LinkBridge-Setup-${{ steps.version.outputs.version }}.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publier la GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $asset = "dist/LinkBridge-Setup-$env:APP_VERSION.exe"
+          gh release create "$env:GITHUB_REF_NAME" $asset --title "LinkBridge $env:GITHUB_REF_NAME" --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+            gh release upload "$env:GITHUB_REF_NAME" $asset --clobber
+          }

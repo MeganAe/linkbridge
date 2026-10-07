@@ -38,7 +38,7 @@ jobs:
           gradle-version: '8.9'
 
       - name: Exécuter les tests unitaires
-        run: gradle --no-daemon --max-workers=2 :app:testDebugUnitTest
+        run: gradle --no-daemon --max-workers=2 :core:test :app:testDebugUnitTest
 
       - name: Compiler l'APK debug
         run: gradle --no-daemon --max-workers=2 :app:assembleDebug
