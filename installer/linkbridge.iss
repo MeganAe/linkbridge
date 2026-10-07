@@ -1,4 +1,4 @@
-; LinkBridge — installateur Windows (Inno Setup)
+﻿; LinkBridge — installateur Windows (Inno Setup)
 ;
 ; Compile avec :
 ;   iscc /DAppVersion=0.3.0 installer\linkbridge.iss
@@ -55,7 +55,7 @@ AppSupportURL={#AppRepository}
 AppUpdatesURL={#AppRepository}
 AppCopyright=© 2026 {#AppAuthor}. Logiciel sous licence MIT.
 ; Métadonnées du fichier .exe, visibles dans les propriétés de l'installateur.
-VersionInfoCompanyName={#AppAuthor}
+VersionInfoCompany={#AppAuthor}
 VersionInfoProductName=LinkBridge
 VersionInfoDescription=LinkBridge : un pont, pas un hotspot.
 VersionInfoCopyright=© 2026 {#AppAuthor}
