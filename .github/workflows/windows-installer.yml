@@ -42,29 +42,36 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             V="${GITHUB_REF_NAME#v}"
           else
-            V="${{ github.event.inputs.version || '0.3.0' }}"
+            V="${{ github.event.inputs.version }}"
           fi
+          V="${V:-0.3.0}"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "Version : $V"
 
       - name: Exécuter les tests du module core
         run: gradle --no-daemon --max-workers=2 :core:test
 
+      # La version passe par variable d'environnement : sur Windows, la ligne
+      # de commande PowerShell/cmd coupait -PappVersion=0.3.0 en deux arguments
+      # ("-PappVersion=0" + ".3.0"), ce qui cassait la configuration jpackage.
       - name: Construire l'app-image avec jpackage
-        run: gradle --no-daemon --max-workers=2 :desktop:createDistributable -PappVersion=${{ steps.version.outputs.version }}
+        env:
+          ORG_GRADLE_PROJECT_appVersion: ${{ steps.version.outputs.version }}
+        run: gradle --no-daemon --max-workers=2 :desktop:createDistributable
 
       - name: Installer Inno Setup
         run: choco install innosetup -y --no-progress
 
       - name: Compiler l'installateur
         shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           $iscc = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) { throw "ISCC.exe introuvable après installation de Inno Setup" }
-          & $iscc /DAppVersion=${{ steps.version.outputs.version }} installer\linkbridge.iss
+          & $iscc "/DAppVersion=$env:APP_VERSION" installer\linkbridge.iss
           if ($LASTEXITCODE -ne 0) { throw "La compilation de l'installateur a échoué" }
 
       - name: Publier l'installateur en artifact
@@ -80,9 +87,10 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $asset = "dist/LinkBridge-Setup-${{ steps.version.outputs.version }}.exe"
-          gh release create "${{ github.ref_name }}" $asset --title "LinkBridge ${{ github.ref_name }}" --generate-notes
+          $asset = "dist/LinkBridge-Setup-$env:APP_VERSION.exe"
+          gh release create "$env:GITHUB_REF_NAME" $asset --title "LinkBridge $env:GITHUB_REF_NAME" --generate-notes
           if ($LASTEXITCODE -ne 0) {
-            gh release upload "${{ github.ref_name }}" $asset --clobber
+            gh release upload "$env:GITHUB_REF_NAME" $asset --clobber
           }
