@@ -1,0 +1,12 @@
+<resources>
+    <!-- À partir d'Android 8.1, la barre de navigation peut aussi passer en icônes sombres.
+         Le style reprend tout le contenu du style de base : les qualifiants ne fusionnent pas
+         les items, ils remplacent la ressource entière. -->
+    <style name="Theme.LinkBridge" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/linkbridge_canvas</item>
+        <item name="android:statusBarColor">@color/linkbridge_canvas</item>
+        <item name="android:navigationBarColor">@color/linkbridge_canvas</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

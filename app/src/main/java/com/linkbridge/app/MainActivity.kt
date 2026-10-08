@@ -62,7 +62,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -74,7 +73,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -84,7 +82,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -654,12 +651,6 @@ private fun LinkBridgeApp(
     var showAbout by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
 
-    // La barre du haut accompagne le défilement : elle se réduit d'elle-même et revient
-    // dès qu'on remonte. Le geste reste continu, sans saccade à l'entrée du contenu.
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
-        rememberTopAppBarState()
-    )
-
     LinkBridgeTheme {
         if (showAbout) AboutDialog(onDismiss = { showAbout = false })
         if (showAppPicker) {
@@ -671,27 +662,20 @@ private fun LinkBridgeApp(
             )
         }
         Scaffold(
-            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             containerColor = LinkBridgeBrand.Background,
             topBar = {
-                LargeTopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            LinkBridgeMark(Modifier.size(30.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("LinkBridge", fontWeight = FontWeight.Bold)
-                        }
-                    },
+                // Barre normale, compacte, qui ne se déplie pas : juste la marque à gauche et
+                // les deux accès à droite. Aucun nom qui flotte au milieu de l'écran.
+                TopAppBar(
+                    title = { LinkBridgeMark(Modifier.size(32.dp)) },
                     actions = {
                         TextButton(onClick = onOpenGuide) { Text("Guide") }
                         IconButton(onClick = { showAbout = true }) {
                             Icon(Icons.Outlined.Info, contentDescription = "À propos")
                         }
                     },
-                    scrollBehavior = scrollBehavior,
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = LinkBridgeBrand.Background,
-                        scrolledContainerColor = LinkBridgeBrand.Background,
                         titleContentColor = LinkBridgeBrand.Ink,
                         navigationIconContentColor = LinkBridgeBrand.Ink,
                         actionIconContentColor = LinkBridgeBrand.Ink

@@ -3,6 +3,11 @@
          marque : la première image de Compose n'est donc jamais précédée d'un flash blanc. -->
     <style name="Theme.LinkBridge" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/linkbridge_canvas</item>
+        <!-- Les deux barres système prennent la couleur du fond de l'application : plus de
+             bandeau gris en haut ni de bandeau noir en bas. -->
+        <item name="android:statusBarColor">@color/linkbridge_canvas</item>
+        <item name="android:navigationBarColor">@color/linkbridge_canvas</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <!-- Thème de démarrage : fond Ink, icône de la marque animée. postSplashScreenTheme

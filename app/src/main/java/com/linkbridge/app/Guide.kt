@@ -68,12 +68,17 @@ internal fun PreparationCard(
             }
 
             if (wifiOn) {
-                PreparationStep("1", "Active le Wi‑Fi sur les deux téléphones. LinkBridge s'en sert pour les relier directement.")
+                PreparationStep(
+                    "1",
+                    "Active le Wi‑Fi sur les deux téléphones. LinkBridge s'en sert pour les relier directement."
+                )
             } else {
-                Text(
-                    "Active le Wi‑Fi pour continuer. LinkBridge a besoin du Wi‑Fi pour relier les deux " +
-                        "téléphones entre eux.",
-                    style = MaterialTheme.typography.bodyMedium
+                // Même numérotation dans les deux cas : sans elle, la liste commençait à 2
+                // et l'étape manquante donnait l'impression d'un affichage cassé.
+                PreparationStep(
+                    "1",
+                    "Active le Wi‑Fi pour continuer. LinkBridge a besoin du Wi‑Fi pour relier les " +
+                        "deux téléphones entre eux."
                 )
             }
             PreparationStep("2", "Le partage de connexion et le point d'accès ne servent à rien ici : le Wi‑Fi allumé suffit.")
