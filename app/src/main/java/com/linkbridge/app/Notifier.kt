@@ -16,23 +16,41 @@ import androidx.core.content.ContextCompat
 /**
  * Vraies notifications Android pour les événements importants (connexion établie, échec,
  * lien perdu, Wi‑Fi ou localisation à activer). Elles s'affichent en bandeau au-dessus de
- * l'écran, avec son, au lieu d'un simple texte dans l'application qu'on ne voit pas.
+ * l'écran, au lieu d'un simple texte dans l'application qu'on ne voit pas.
+ *
+ * Deux canaux, parce que tout ne mérite pas la même attention : les bonnes nouvelles
+ * s'affichent en silence, les problèmes sonnent et vibrent. Sans cette séparation, chaque
+ * connexion réussie faisait exactement le même bruit qu'un échec, et l'utilisateur finissait
+ * par ne plus rien écouter.
  */
 object Notifier {
-    private const val CHANNEL_ID = "linkbridge_alerts"
+    private const val CHANNEL_INFO = "linkbridge_infos"
+    private const val CHANNEL_ALERT = "linkbridge_alerts"
 
     const val ID_LINK = 2001
     const val ID_ERROR = 2002
     const val ID_SETUP = 2003
 
+    /**
+     * Affiche une notification.
+     *
+     * @param important vrai pour un problème qui demande une action : la notification sonne.
+     *   Faux pour une information de bonne marche : elle s'affiche sans bruit.
+     */
     @SuppressLint("MissingPermission")
-    fun post(context: Context, id: Int, title: String, text: String) {
+    fun post(
+        context: Context,
+        id: Int,
+        title: String,
+        text: String,
+        important: Boolean = false
+    ) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
             ) return
-            ensureChannel(context)
+            ensureChannels(context)
             val open = PendingIntent.getActivity(
                 context,
                 id,
@@ -44,19 +62,32 @@ object Notifier {
                     ),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            val builder = NotificationCompat.Builder(
+                context,
+                if (important) CHANNEL_ALERT else CHANNEL_INFO
+            )
                 .setSmallIcon(R.drawable.ic_stat_linkbridge)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setDefaults(NotificationCompat.DEFAULT_ALL)
-                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(
+                    if (important) NotificationCompat.PRIORITY_HIGH
+                    else NotificationCompat.PRIORITY_LOW
+                )
+                .setCategory(
+                    if (important) NotificationCompat.CATEGORY_MESSAGE
+                    else NotificationCompat.CATEGORY_STATUS
+                )
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
                 .setContentIntent(open)
-                .build()
-            NotificationManagerCompat.from(context).notify(id, notification)
+            if (important) {
+                // Le canal porte déjà le son et la vibration : on ne les ajoute pas ici,
+                // sinon l'utilisateur ne peut plus les couper depuis les réglages Android.
+            } else {
+                builder.setSilent(true)
+            }
+            NotificationManagerCompat.from(context).notify(id, builder.build())
         } catch (_: Throwable) {
             // Une notification manquée ne doit jamais faire tomber l'application.
         }
@@ -69,17 +100,31 @@ object Notifier {
         }
     }
 
-    private fun ensureChannel(context: Context) {
+    private fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                "Alertes LinkBridge",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Connexion établie, échec, lien perdu, réglages à activer."
-            }
-        )
+        try {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_INFO,
+                    "LinkBridge · informations",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Connexions établies et fin de session, sans bruit."
+                    setShowBadge(false)
+                }
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ALERT,
+                    "LinkBridge · problèmes",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Connexion impossible, demande non aboutie, réglages à activer."
+                    setShowBadge(true)
+                }
+            )
+        } catch (_: Throwable) {
+        }
     }
 }

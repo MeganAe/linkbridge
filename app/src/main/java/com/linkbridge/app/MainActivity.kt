@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.location.LocationManager
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
@@ -13,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -47,6 +50,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
@@ -95,6 +100,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.startForegroundService
 import androidx.core.location.LocationManagerCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 
 /** Délai au-delà duquel une demande de connexion sans réponse est annoncée à l'utilisateur. */
 private const val CONNECT_TIMEOUT_MS = 30_000L
@@ -102,8 +109,23 @@ private const val CONNECT_TIMEOUT_MS = 30_000L
 /** Code de demande pour l'autorisation d'afficher les notifications. */
 private const val REQUEST_NOTIFICATIONS = 41
 
+/**
+ * Android n'exige la localisation activée pour Wi‑Fi Direct que jusqu'à Android 12.
+ * À partir d'Android 13, l'autorisation des appareils à proximité la remplace : demander la
+ * localisation en plus bloquait Partager et Recevoir pour rien.
+ */
+private val locationRequired = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+
 /** Indique à l'accueil qu'on revient d'une autre page. */
 const val EXTRA_GO_HOME = "com.linkbridge.app.GO_HOME"
+
+/** Résultat du test de connexion demandé par l'utilisateur. */
+private sealed interface LinkTestState {
+    data object Idle : LinkTestState
+    data object Running : LinkTestState
+    data class Success(val detail: String) : LinkTestState
+    data class Failure(val message: String) : LinkTestState
+}
 
 class MainActivity : ComponentActivity() {
     private var role by mutableStateOf<LinkRole?>(null)
@@ -137,8 +159,14 @@ class MainActivity : ComponentActivity() {
     // Localisation activée : sans elle, Wi‑Fi Direct ne trouve rien sur Android 12 et avant.
     private var locationOn by mutableStateOf(true)
 
-    // Fenêtre qui demande d'activer le Wi‑Fi et la localisation.
+    // Fenêtre qui demande d'activer le Wi‑Fi et la localisation. Elle n'apparaît que sur
+    // une action volontaire : Partager ou Recevoir. Jamais à l'ouverture de l'application.
     private var radioPrompt by mutableStateOf(false)
+
+    // Ce que l'utilisateur voulait faire quand la demande d'activation s'est affichée :
+    // Partager ou Recevoir. Dès que les réglages sont bons, l'action reprend toute seule,
+    // au lieu de lui faire tout recommencer depuis le début.
+    private var pendingRadioAction: (() -> Unit)? = null
 
     // Session en cours : permet de retrouver l'écran du partage quand on rouvre
     // l'application alors que le service tourne toujours en arrière-plan.
@@ -150,6 +178,19 @@ class MainActivity : ComponentActivity() {
 
     // Une invitation est partie et n'a pas encore abouti : garde-fou contre les doublons.
     private var connecting by mutableStateOf(false)
+
+    // Adresse du relais côté téléphone B : gardée pour pouvoir tester la connexion.
+    private var receiverHost by mutableStateOf("")
+
+    // Ce téléphone a-t-il un accès Internet réel ? Un partage sans Internet ne sert à rien,
+    // et l'utilisateur ne s'en apercevait qu'une fois tout le reste en place.
+    private var internetOk by mutableStateOf(true)
+
+    // Résultat affiché du test de connexion.
+    private var linkTest by mutableStateOf<LinkTestState>(LinkTestState.Idle)
+
+    // Android limite-t-il LinkBridge pour économiser la batterie ?
+    private var batteryRestricted by mutableStateOf(false)
 
     // Un lien a réellement été formé.
     private var linkUp = false
@@ -246,13 +287,18 @@ class MainActivity : ComponentActivity() {
                 } else {
                     message
                 }
-                Notifier.post(this, Notifier.ID_ERROR, "Connexion impossible", message)
+                Notifier.post(
+                    this, Notifier.ID_ERROR, "Connexion impossible", message, important = true
+                )
             }
         )
         wifiDirect.register()
         wifiOn = wifiDirect.wifiEnabled()
+        internetOk = internetAvailable()
+        batteryRestricted = !batteryExempt()
         locationOn = locationEnabled()
-        radioPrompt = !wifiOn || !locationOn
+        // Aucune demande à l'ouverture : l'écran d'accueil explique la préparation, mais
+        // rien ne surgit tout seul au visage de l'utilisateur.
         requestNotificationPermissionIfNeeded()
 
         // Retour : sur n'importe quel écran de l'application, on revient à l'accueil.
@@ -287,6 +333,12 @@ class MainActivity : ComponentActivity() {
             sessionFromDirect = saved.role == LinkRole.SHARE
             role = saved.role
             if (saved.code.isNotEmpty()) pairingCode = saved.code
+            if (saved.role == LinkRole.RECEIVE) {
+                // Le code saisi et l'adresse du relais reviennent avec l'écran : le test de
+                // connexion reste utilisable après une fermeture de l'application.
+                pairingInput = saved.code
+                receiverHost = saved.host
+            }
             status = when (saved.role) {
                 LinkRole.SHARE -> "Partage en cours. Il continue même si tu fermes l'application."
                 LinkRole.RECEIVE -> "Connexion reçue active. Elle continue en arrière-plan."
@@ -318,9 +370,32 @@ class MainActivity : ComponentActivity() {
                 locationOn = locationOn,
                 radioPrompt = radioPrompt,
                 onEnableRadios = ::enableRadios,
-                onDismissRadioPrompt = { radioPrompt = false },
+                onDismissRadioPrompt = {
+                    // L'utilisateur a dit « plus tard » : on ne garde rien en attente, et la
+                    // notification disparaît au lieu de le relancer sans cesse.
+                    radioPrompt = false
+                    pendingRadioAction = null
+                    Notifier.cancel(this, Notifier.ID_SETUP)
+                },
                 sessionActive = sessionActive,
                 connecting = connecting,
+                internetOk = internetOk,
+                onRecheckInternet = {
+                    internetOk = internetAvailable()
+                    status = if (internetOk) {
+                        "Internet disponible sur ce téléphone"
+                    } else {
+                        "Toujours pas d'Internet : active les données mobiles"
+                    }
+                },
+                batteryRestricted = batteryRestricted,
+                onOpenBatterySettings = ::openBatterySettings,
+                onOpenAppPicker = {
+                    startActivity(Intent(this, AppPickerActivity::class.java))
+                },
+                receiverHost = receiverHost,
+                linkTest = linkTest,
+                onTestLink = ::runConnectionTest,
                 onOpenGuide = ::openGuide,
                 onOpenWifiSettings = ::openWifiSettings,
                 pairingCode = pairingCode,
@@ -394,7 +469,9 @@ class MainActivity : ComponentActivity() {
             }
 
             current == LinkRole.RECEIVE && !info.isGroupOwner -> {
-                SessionStore.save(this, LinkRole.RECEIVE, pairingInput)
+                receiverHost = host
+                linkTest = LinkTestState.Idle
+                SessionStore.save(this, LinkRole.RECEIVE, pairingInput, host)
                 when {
                     pairingInput.length != 6 -> {
                         // Le lien est formé, il ne manque que le code : le tunnel partira tout
@@ -472,7 +549,8 @@ class MainActivity : ComponentActivity() {
                     "La demande n'a pas abouti. Rapproche les deux téléphones, puis appuie de nouveau sur la ligne à relier."
                 Notifier.post(
                     this@MainActivity, Notifier.ID_ERROR,
-                    "Connexion non aboutie", "Rapproche les deux téléphones, puis réessaie."
+                    "Connexion non aboutie", "Rapproche les deux téléphones, puis réessaie.",
+                    important = true
                 )
             }
         }
@@ -487,6 +565,19 @@ class MainActivity : ComponentActivity() {
 
     private fun beginSharing() {
         requestNotificationPermissionIfNeeded()
+        // Le partage sans Internet ne donne rien : mieux vaut le dire tout de suite que
+        // laisser l'autre téléphone attendre une connexion qui ne viendra jamais.
+        internetOk = internetAvailable()
+        if (!internetOk) {
+            Notifier.post(
+                this,
+                Notifier.ID_SETUP,
+                "Ce téléphone n'a pas Internet",
+                "Le partage est lancé, mais rien ne passera tant que les données mobiles " +
+                    "ne sont pas activées.",
+                important = true
+            )
+        }
         role = LinkRole.SHARE
         connecting = false
         linkUp = false
@@ -587,6 +678,8 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (!appSelectionValid()) return
+        receiverHost = cleanHost
+        linkTest = LinkTestState.Idle
         val intent = VpnService.prepare(this)
         if (intent != null) {
             status = "Autorise LinkBridge à créer la connexion VPN"
@@ -626,6 +719,9 @@ class MainActivity : ComponentActivity() {
         groupPassphrase = null
         role = null
         peers = emptyList()
+        receiverHost = ""
+        linkTest = LinkTestState.Idle
+        pendingRadioAction = null
         status = "Prêt à créer un lien"
     }
 
@@ -655,8 +751,26 @@ class MainActivity : ComponentActivity() {
         // L'utilisateur a pu activer le Wi-Fi ou la localisation depuis les réglages Android.
         wifiOn = wifiDirect.wifiEnabled()
         locationOn = locationEnabled()
-        radioPrompt = (!wifiOn || !locationOn) && !sessionActive
-        if (wifiOn && locationOn) Notifier.cancel(this, Notifier.ID_SETUP)
+        // Rien ne s'ouvre ici tout seul : on se contente de constater. La demande n'existe
+        // que si l'utilisateur a appuyé sur Partager ou Recevoir, et c'est là qu'elle est
+        // posée. Le seul geste automatique est la reprise de ce qu'il voulait faire.
+        if (wifiOn && (!locationRequired || locationOn)) {
+            Notifier.cancel(this, Notifier.ID_SETUP)
+            val waiting = pendingRadioAction
+            if (waiting != null) {
+                pendingRadioAction = null
+                radioPrompt = false
+                waiting()
+            }
+        }
+        // L'utilisateur a pu activer ses données mobiles ou changer le réglage de batterie
+        // pendant qu'il était dans les réglages Android.
+        internetOk = internetAvailable()
+        batteryRestricted = !batteryExempt()
+        // L'utilisateur revient peut-être de la page des applications : on relit le choix.
+        val selection = AppSelectionStore.load(this)
+        restrictApps = selection.restrict
+        selectedApps = selection.packages
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -675,19 +789,103 @@ class MainActivity : ComponentActivity() {
         true
     }
 
+    /**
+     * Vrai si un réseau de ce téléphone donne réellement accès à Internet.
+     *
+     * Tous les réseaux sont examinés, et pas seulement le réseau actif : pendant un partage
+     * Wi‑Fi Direct, le réseau actif devient le groupe local, qui n'a évidemment pas Internet.
+     */
+    private fun internetAvailable(): Boolean = try {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        manager.allNetworks.any { network ->
+            val caps = manager.getNetworkCapabilities(network) ?: return@any false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }
+    } catch (_: Throwable) {
+        // Impossible à savoir : on préfère ne pas inquiéter l'utilisateur à tort.
+        true
+    }
+
+    /** Vrai si Android laisse LinkBridge tourner sans restriction d'économie de batterie. */
+    private fun batteryExempt(): Boolean = try {
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        power.isIgnoringBatteryOptimizations(packageName)
+    } catch (_: Throwable) {
+        true
+    }
+
+    /** Ouvre la liste Android où LinkBridge peut être exempté de l'économie de batterie. */
+    private fun openBatterySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        } catch (_: Exception) {
+            status = "Ouvre les réglages Android, puis cherche l'économie de batterie"
+        }
+    }
+
+    /**
+     * Teste réellement la connexion reçue.
+     *
+     * Le téléphone se connecte au relais du téléphone A, s'authentifie avec le code, et
+     * demande une page minuscule à travers lui. C'est la seule façon de savoir si Internet
+     * passe, au lieu de croire l'écran sur parole : jusqu'ici, « connecté » ne voulait rien
+     * dire de plus que « le lien Wi‑Fi Direct existe ».
+     */
+    private fun runConnectionTest() {
+        val host = receiverHost
+        val code = pairingInput
+        if (host.isBlank() || code.length != 6) {
+            linkTest = LinkTestState.Failure("Le lien n'est pas encore établi")
+            return
+        }
+        linkTest = LinkTestState.Running
+        Thread {
+            val result = try {
+                val statusLine = Socks5Client.probeHttp(
+                    relayHost = host,
+                    relayPort = Socks5Gateway.DEFAULT_PORT,
+                    username = Socks5Gateway.USERNAME,
+                    password = code
+                )
+                LinkTestState.Success(statusLine)
+            } catch (_: SocketTimeoutException) {
+                LinkTestState.Failure(
+                    "Le relais ne répond pas. Vérifie que le téléphone A affiche toujours son code."
+                )
+            } catch (_: ConnectException) {
+                LinkTestState.Failure("Le relais est injoignable. Rapproche les deux téléphones.")
+            } catch (error: Exception) {
+                LinkTestState.Failure(error.message ?: "Le test a échoué")
+            }
+            runOnUiThread { linkTest = result }
+        }.apply {
+            name = "linkbridge-test"
+            start()
+        }
+    }
+
     /** Lance l'action si le Wi‑Fi et la localisation sont actifs, sinon les demande. */
     private fun ensureRadios(action: () -> Unit) {
         wifiOn = wifiDirect.wifiEnabled()
         locationOn = locationEnabled()
-        if (wifiOn && locationOn) {
+        if (wifiOn && (!locationRequired || locationOn)) {
             radioPrompt = false
             action()
         } else {
+            // Seule façon d'arriver ici : un appui sur Partager ou sur Recevoir.
+            pendingRadioAction = action
             radioPrompt = true
             Notifier.post(
                 this, Notifier.ID_SETUP,
-                "Active le Wi‑Fi et la localisation",
-                "Sans eux, LinkBridge ne peut ni trouver ni relier les téléphones."
+                if (locationRequired) {
+                    "Active le Wi‑Fi et la localisation pour continuer"
+                } else {
+                    "Active le Wi‑Fi pour continuer"
+                },
+                "LinkBridge en a besoin pour relier les deux téléphones. Le partage de " +
+                    "connexion et le point d'accès d'Android ne servent à rien ici.",
+                important = true
             )
         }
     }
@@ -703,7 +901,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
                 }
-            } else if (!locationOn) {
+            } else if (!locationOn && locationRequired) {
                 startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
             }
         } catch (_: Exception) {
@@ -738,6 +936,14 @@ private fun LinkBridgeApp(
     onDismissRadioPrompt: () -> Unit,
     sessionActive: Boolean,
     connecting: Boolean,
+    internetOk: Boolean,
+    onRecheckInternet: () -> Unit,
+    batteryRestricted: Boolean,
+    onOpenBatterySettings: () -> Unit,
+    onOpenAppPicker: () -> Unit,
+    receiverHost: String,
+    linkTest: LinkTestState,
+    onTestLink: () -> Unit,
     onOpenGuide: () -> Unit,
     onOpenWifiSettings: () -> Unit,
     pairingCode: String,
@@ -762,32 +968,33 @@ private fun LinkBridgeApp(
     onStop: () -> Unit
 ) {
     var showAbout by remember { mutableStateOf(false) }
-    var showAppPicker by remember { mutableStateOf(false) }
 
     LinkBridgeTheme {
         if (showAbout) AboutDialog(onDismiss = { showAbout = false })
         if (radioPrompt) {
             AlertDialog(
                 onDismissRequest = onDismissRadioPrompt,
-                title = { Text("Active le Wi‑Fi et la localisation") },
+                title = {
+                    Text(
+                        if (locationRequired) "Active le Wi‑Fi et la localisation"
+                        else "Active le Wi‑Fi"
+                    )
+                },
                 text = {
                     Text(
-                        "Sans eux, rien ne passe : LinkBridge ne peut ni trouver l'autre téléphone, " +
-                            "ni créer le lien.\n\n" +
-                            (if (!wifiOn) "• Wi‑Fi : désactivé\n" else "• Wi‑Fi : activé\n") +
-                            (if (!locationOn) "• Localisation : désactivée" else "• Localisation : activée")
+                        "Sans lui, rien ne passe : LinkBridge ne peut ni trouver l'autre " +
+                            "téléphone, ni créer le lien.\n\n" +
+                            (if (!wifiOn) "• Wi‑Fi : désactivé" else "• Wi‑Fi : activé") +
+                            if (locationRequired) {
+                                if (!locationOn) "\n• Localisation : désactivée"
+                                else "\n• Localisation : activée"
+                            } else {
+                                ""
+                            }
                     )
                 },
                 confirmButton = { TextButton(onClick = onEnableRadios) { Text("Activer") } },
                 dismissButton = { TextButton(onClick = onDismissRadioPrompt) { Text("Plus tard") } }
-            )
-        }
-        if (showAppPicker) {
-            AppPickerDialog(
-                apps = installedApps,
-                selected = selectedApps,
-                onToggle = onToggleApp,
-                onDismiss = { showAppPicker = false }
             )
         }
         Scaffold(
@@ -875,6 +1082,11 @@ private fun LinkBridgeApp(
                         pairingCode = pairingCode,
                         groupSsid = groupSsid,
                         groupPassphrase = groupPassphrase,
+                        sessionActive = sessionActive,
+                        internetOk = internetOk,
+                        onRecheckInternet = onRecheckInternet,
+                        batteryRestricted = batteryRestricted,
+                        onOpenBatterySettings = onOpenBatterySettings,
                         onStop = onStop
                     )
                 }
@@ -886,6 +1098,10 @@ private fun LinkBridgeApp(
                 ) {
                     ReceivePanel(
                         connecting = connecting,
+                        sessionActive = sessionActive,
+                        receiverHost = receiverHost,
+                        linkTest = linkTest,
+                        onTestLink = onTestLink,
                         pairingInput = pairingInput,
                         onPairingInputChange = onPairingInputChange,
                         peers = peers,
@@ -898,7 +1114,7 @@ private fun LinkBridgeApp(
                         restrictApps = restrictApps,
                         selectedCount = selectedApps.size,
                         onRestrictChange = onRestrictChange,
-                        onChooseApps = { showAppPicker = true },
+                        onChooseApps = onOpenAppPicker,
                         onStop = onStop
                     )
                 }
@@ -1024,6 +1240,11 @@ private fun SharePanel(
     pairingCode: String,
     groupSsid: String?,
     groupPassphrase: String?,
+    sessionActive: Boolean,
+    internetOk: Boolean,
+    onRecheckInternet: () -> Unit,
+    batteryRestricted: Boolean,
+    onOpenBatterySettings: () -> Unit,
     onStop: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1063,6 +1284,10 @@ private fun SharePanel(
                 }
             }
         }
+        InternetNotice(internetOk = internetOk, onRecheck = onRecheckInternet)
+        if (sessionActive && batteryRestricted) {
+            BatteryNotice(onOpenSettings = onOpenBatterySettings)
+        }
         OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.StopCircle, null)
             Spacer(Modifier.width(8.dp))
@@ -1074,6 +1299,10 @@ private fun SharePanel(
 @Composable
 private fun ReceivePanel(
     connecting: Boolean,
+    sessionActive: Boolean,
+    receiverHost: String,
+    linkTest: LinkTestState,
+    onTestLink: () -> Unit,
     pairingInput: String,
     onPairingInputChange: (String) -> Unit,
     peers: List<WifiP2pDevice>,
@@ -1131,6 +1360,11 @@ private fun ReceivePanel(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
+        if (sessionActive) {
+            LinkTestCard(state = linkTest, onTest = onTestLink)
+        } else if (receiverHost.isNotBlank() && linkTest !is LinkTestState.Idle) {
+            LinkTestCard(state = linkTest, onTest = onTestLink)
+        }
         if (connecting) {
             Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Butter)) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1196,6 +1430,128 @@ private fun ReceivePanel(
         ) { Text("Se connecter au relais") }
 
         OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Annuler") }
+    }
+}
+
+/**
+ * Prévient que le partage n'a rien à distribuer.
+ *
+ * C'était la panne la plus déroutante : un lien parfaitement formé, un écran qui annonce
+ * « connecté » des deux côtés, et rien qui passe, parce que les données mobiles du téléphone
+ * qui partage étaient coupées.
+ */
+@Composable
+private fun InternetNotice(internetOk: Boolean, onRecheck: () -> Unit) {
+    if (internetOk) return
+    Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Butter)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Info, contentDescription = null, tint = LinkBridgeBrand.Ink)
+                Spacer(Modifier.width(8.dp))
+                Text("Ce téléphone n'a pas Internet", fontWeight = FontWeight.Bold)
+            }
+            Text(
+                "Le lien peut se créer, mais rien ne passera : active les données mobiles ou " +
+                    "reconnecte le Wi‑Fi, puis appuie sur Revérifier.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedButton(onClick = onRecheck) { Text("Revérifier") }
+        }
+    }
+}
+
+/**
+ * Rappelle qu'Android peut couper un service de premier plan pour économiser la batterie.
+ *
+ * C'est la cause des partages qui « tiennent dix minutes puis lâchent » : le système arrête
+ * le service, la notification disparaît, et rien n'explique pourquoi.
+ */
+@Composable
+private fun BatteryNotice(onOpenSettings: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Lavender)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.BatteryAlert,
+                    contentDescription = null,
+                    tint = LinkBridgeBrand.Purple
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Économie de batterie", fontWeight = FontWeight.Bold)
+            }
+            Text(
+                "Android peut arrêter le partage pour économiser la batterie, surtout l'écran " +
+                    "éteint. Autorise LinkBridge à tourner sans restriction.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedButton(onClick = onOpenSettings) { Text("Ouvrir les réglages") }
+        }
+    }
+}
+
+/**
+ * Test de connexion : le seul endroit de l'application qui dit si Internet passe vraiment.
+ *
+ * « Connecté » ne voulait dire que « le lien Wi‑Fi Direct existe ». Ce bouton va plus loin :
+ * il interroge le relais avec le code, puis demande une page minuscule à travers lui.
+ */
+@Composable
+private fun LinkTestCard(state: LinkTestState, onTest: () -> Unit) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Vérifier la connexion", fontWeight = FontWeight.Bold)
+            Text(
+                "LinkBridge interroge le relais avec ton code, puis demande une page minuscule " +
+                    "à travers lui.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            when (state) {
+                is LinkTestState.Idle -> Unit
+                is LinkTestState.Running -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = LinkBridgeBrand.Purple
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("Test en cours…", style = MaterialTheme.typography.bodySmall)
+                }
+
+                is LinkTestState.Success -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        tint = LinkBridgeBrand.Purple,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Internet passe. Le relais répond : ${state.detail}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                is LinkTestState.Failure -> Text(
+                    state.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LinkBridgeBrand.Coral
+                )
+            }
+            OutlinedButton(
+                onClick = onTest,
+                enabled = state !is LinkTestState.Running,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    when (state) {
+                        is LinkTestState.Failure -> "Réessayer"
+                        is LinkTestState.Success -> "Retester"
+                        else -> "Tester la connexion"
+                    }
+                )
+            }
+        }
     }
 }
 

@@ -13,8 +13,21 @@ android {
         applicationId = "com.linkbridge.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 7
+        versionName = "0.5.1"
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            // Le certificat de développement est livré avec le projet, et non engendré par
+            // chaque machine : sans cela, chaque construction portait une signature
+            // différente et Android refusait d'installer la nouvelle version par-dessus
+            // l'ancienne, en obligeant à tout désinstaller.
+            storeFile = file("keystore/linkbridge-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

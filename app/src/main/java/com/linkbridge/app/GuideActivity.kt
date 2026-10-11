@@ -2,6 +2,7 @@ package com.linkbridge.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -54,8 +55,20 @@ class GuideActivity : ComponentActivity() {
         })
         setContent {
             LinkBridgeTheme {
-                GuidePage(onClose = { goHome() })
+                GuidePage(
+                    onClose = { goHome() },
+                    onOpenBatterySettings = ::openBatterySettings
+                )
             }
+        }
+    }
+
+    /** Ouvre directement le réglage d'économie de batterie, au lieu d'y envoyer à l'aveugle. */
+    private fun openBatterySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        } catch (_: Exception) {
+            // Aucun réglage de ce genre sur cet appareil : le guide reste lisible sans lui.
         }
     }
 
@@ -72,7 +85,7 @@ class GuideActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GuidePage(onClose: () -> Unit) {
+private fun GuidePage(onClose: () -> Unit, onOpenBatterySettings: () -> Unit) {
     Scaffold(
         containerColor = LinkBridgeBrand.Background,
         topBar = {
@@ -220,6 +233,12 @@ private fun GuidePage(onClose: () -> Unit) {
                         "Le Wi‑Fi peut afficher que le réseau n'a pas Internet.",
                         "C'est normal : la connexion vient de LinkBridge, pas du réseau affiché."
                     )
+                    GuideStepRow(
+                        "8",
+                        "Appuie sur Vérifier la connexion, sur l'écran de réception.",
+                        "LinkBridge interroge le relais et demande une page minuscule à travers " +
+                            "lui : c'est la seule façon de savoir si Internet passe vraiment."
+                    )
                 }
                 Spacer(Modifier.height(4.dp))
                 GuideNotice(
@@ -255,16 +274,37 @@ private fun GuidePage(onClose: () -> Unit) {
                         LinkBridgeBrand.Coral
                     )
                     GuideBulletRow(
-                        "La connexion se coupe toute seule : retire LinkBridge de l'optimisation " +
-                            "de la batterie, dans les réglages Android.",
+                        "La connexion se coupe toute seule, souvent écran éteint : Android a " +
+                            "arrêté le service pour économiser la batterie. Le bouton ci-dessous " +
+                            "ouvre le bon réglage : cherche LinkBridge et autorise-le à tourner " +
+                            "sans restriction.",
                         LinkBridgeBrand.Coral
                     )
                     GuideBulletRow(
                         "Rien ne passe alors que tout semble connecté : vérifie que les données " +
-                            "mobiles du téléphone qui partage sont bien actives, et que le code " +
-                            "saisi est bien celui affiché sur ce téléphone.",
+                            "mobiles du téléphone qui partage sont bien actives. L'écran de " +
+                            "partage affiche aussi un avertissement quand ce téléphone n'a " +
+                            "aucun accès à Internet.",
                         LinkBridgeBrand.Coral
                     )
+                    GuideBulletRow(
+                        "Le code saisi doit être exactement celui affiché sur l'autre téléphone. " +
+                            "Un code différent donne un lien qui se forme mais laisse tout " +
+                            "bloqué : le test de connexion le dit en une seconde.",
+                        LinkBridgeBrand.Coral
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = onOpenBatterySettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LinkBridgeBrand.Ink,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Ouvrir les réglages de batterie", fontWeight = FontWeight.Bold)
                 }
             }
 

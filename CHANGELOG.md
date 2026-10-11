@@ -4,6 +4,75 @@ Côté téléphone uniquement. Le module `core` et l'application PC n'ont pas é
 
 ---
 
+## 0.5.1 — 12 octobre 2026
+
+### La demande d'activation n'arrive plus sans raison
+
+La fenêtre qui demande d'activer le Wi‑Fi et la localisation surgissait à l'ouverture de
+l'application et à chaque retour au premier plan, sans que personne n'ait rien demandé. Elle
+n'apparaît plus que sur une action volontaire : **un appui sur Partager ou sur Recevoir**, et
+à aucun autre moment. La notification qui l'accompagne suit la même règle.
+
+- Tant que l'utilisateur ne touche ni Partager ni Recevoir, l'application ne réclame rien.
+- « Plus tard » retire la notification au lieu de la laisser relancer sans cesse.
+- Si l'utilisateur va activer le Wi‑Fi dans les réglages Android, **l'action qu'il voulait
+  faire reprend toute seule** en revenant : plus besoin de tout recommencer.
+- Le message rappelle que le partage de connexion et le point d'accès d'Android ne servent à
+  rien ici, puisque seul le Wi‑Fi est utile.
+
+---
+
+## 0.5.0 — 12 octobre 2026
+
+### La connexion se vérifie enfin
+
+- **Vérifier la connexion**, sur l'écran de réception : LinkBridge se connecte au relais du
+  téléphone A, s'authentifie avec le code, puis demande une page minuscule à travers lui.
+  Jusqu'ici « connecté » voulait seulement dire « le lien Wi‑Fi Direct existe » — l'écran
+  pouvait annoncer une réussite parfaite sans que rien ne passe. Le test emploie le client
+  SOCKS5 du module core, celui qui sert déjà au bouton Tester de la version PC.
+- L'adresse du relais et le code sont retenus avec la session : le test reste utilisable
+  après une fermeture de l'application.
+
+### Le partage sans Internet est annoncé
+
+- Un téléphone qui partage sans données mobiles créait un lien impeccable et rien de plus.
+  L'application vérifie maintenant, à chaque retour au premier plan et avant chaque partage,
+  qu'un réseau donne réellement accès à Internet. Sinon : un message dans le statut, un
+  avertissement sur la carte du partage, une notification, et un bouton Revérifier.
+- La vérification regarde tous les réseaux, pas seulement le réseau actif : pendant un
+  partage, le réseau actif est le groupe Wi‑Fi Direct, qui n'a évidemment pas Internet.
+
+### Le choix des applications devient une vraie page
+
+- La fenêtre de 320 dp est remplacée par une page entière, ouverte depuis l'écran principal :
+  la liste occupe tout l'écran, **chaque application arrive avec son icône**, la recherche
+  reste visible, et deux boutons permettent de tout cocher ou de tout décocher.
+- Le choix est écrit à chaque appui : revenir en arrière ne fait rien perdre.
+
+### Notifications classées
+
+- Deux canaux au lieu d'un seul : **informations** (connexion établie, fin de session) en
+  silence, **problèmes** (connexion impossible, demande non aboutie, réglages à activer) avec
+  son. Auparavant, une connexion réussie faisait exactement le même bruit qu'un échec.
+
+### Économie de batterie
+
+- Un rappel apparaît pendant un partage quand Android limite encore LinkBridge, avec un bouton
+  qui ouvre directement le bon réglage. Le guide a le même bouton. C'est la cause des partages
+  qui « tiennent dix minutes puis lâchent », surtout écran éteint.
+
+### Construction et publication
+
+- **Signature stable** : le certificat de développement est livré avec le projet. Chaque
+  construction portait auparavant une signature différente, et Android refusait d'installer
+  la nouvelle version par-dessus l'ancienne.
+- **APK publié automatiquement** : à chaque étiquette `vX.Y.Z`, l'APK est attaché à une
+  release GitHub, avec un lien de téléchargement permanent. Les poussées ordinaires
+  produisent un artifact de trente jours.
+
+---
+
 ## 0.4.0 — 11 octobre 2026
 
 - **Retour = accueil.** Sur l'écran Partager ou Recevoir, le retour ramène à l'accueil et
@@ -17,6 +86,11 @@ Côté téléphone uniquement. Le module `core` et l'application PC n'ont pas é
   Partager ou Recevoir. « Activer » ouvre directement le panneau Wi‑Fi, puis le réglage
   de localisation.
 - **Carte du haut** : coins moins arrondis (32 dp → 12 dp).
+- **Numéro de version** : porté à 0.4.0, code 5. Il était resté à 3, or Android refuse
+  d'installer un paquet plus ancien que celui déjà présent.
+- **Localisation** : demandée seulement sur Android 12 et avant, car c'est la seule version où
+  Android l'impose à Wi‑Fi Direct. Sur Android 13 et plus, la demande bloquait Partager et
+  Recevoir alors que le système n'en a plus besoin.
 
 ---
 
