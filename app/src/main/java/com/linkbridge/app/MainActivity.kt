@@ -2,7 +2,9 @@ package com.linkbridge.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.location.LocationManager
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.net.wifi.p2p.WifiP2pDevice
@@ -13,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -90,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.startForegroundService
+import androidx.core.location.LocationManagerCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 /** Délai au-delà duquel une demande de connexion sans réponse est annoncée à l'utilisateur. */
@@ -97,6 +101,9 @@ private const val CONNECT_TIMEOUT_MS = 30_000L
 
 /** Code de demande pour l'autorisation d'afficher les notifications. */
 private const val REQUEST_NOTIFICATIONS = 41
+
+/** Indique à l'accueil qu'on revient d'une autre page. */
+const val EXTRA_GO_HOME = "com.linkbridge.app.GO_HOME"
 
 class MainActivity : ComponentActivity() {
     private var role by mutableStateOf<LinkRole?>(null)
@@ -126,6 +133,12 @@ class MainActivity : ComponentActivity() {
     // Wi-Fi activé ou non : c'est le prérequis que les nouveaux utilisateurs ignorent, donc
     // l'écran d'accueil le vérifie et propose d'ouvrir les réglages.
     private var wifiOn by mutableStateOf(true)
+
+    // Localisation activée : sans elle, Wi‑Fi Direct ne trouve rien sur Android 12 et avant.
+    private var locationOn by mutableStateOf(true)
+
+    // Fenêtre qui demande d'activer le Wi‑Fi et la localisation.
+    private var radioPrompt by mutableStateOf(false)
 
     // Session en cours : permet de retrouver l'écran du partage quand on rouvre
     // l'application alors que le service tourne toujours en arrière-plan.
@@ -219,6 +232,10 @@ class MainActivity : ComponentActivity() {
                         stopBackgroundSession()
                     }
                     status = "La connexion s'est terminée"
+                    Notifier.post(
+                        this, Notifier.ID_LINK,
+                        "Connexion terminée", "Le lien avec l'autre téléphone s'est arrêté."
+                    )
                 }
             },
             onConnectFailed = { message, retry ->
@@ -229,10 +246,34 @@ class MainActivity : ComponentActivity() {
                 } else {
                     message
                 }
+                Notifier.post(this, Notifier.ID_ERROR, "Connexion impossible", message)
             }
         )
         wifiDirect.register()
         wifiOn = wifiDirect.wifiEnabled()
+        locationOn = locationEnabled()
+        radioPrompt = !wifiOn || !locationOn
+        requestNotificationPermissionIfNeeded()
+
+        // Retour : sur n'importe quel écran de l'application, on revient à l'accueil.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when {
+                    radioPrompt -> radioPrompt = false
+                    role == null -> {
+                        // Déjà à l'accueil : on laisse Android fermer l'écran.
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                    sessionActive || linkUp -> {
+                        // Un partage tourne : on ne le coupe pas par erreur, on quitte l'écran
+                        // et il continue en arrière-plan avec sa notification.
+                        moveTaskToBack(true)
+                    }
+                    else -> stopEverything()
+                }
+            }
+        })
 
         // Le guide s'ouvre en pleine page au premier lancement, puis reste accessible par le
         // bouton Guide de la barre du haut.
@@ -274,6 +315,10 @@ class MainActivity : ComponentActivity() {
                 role = role,
                 status = status,
                 wifiOn = wifiOn,
+                locationOn = locationOn,
+                radioPrompt = radioPrompt,
+                onEnableRadios = ::enableRadios,
+                onDismissRadioPrompt = { radioPrompt = false },
                 sessionActive = sessionActive,
                 connecting = connecting,
                 onOpenGuide = ::openGuide,
@@ -305,8 +350,8 @@ class MainActivity : ComponentActivity() {
                     // Le lien est parfois déjà formé quand le code arrive : on enchaîne.
                     if (clean.length == 6) tryStartPendingTunnel()
                 },
-                onShare = { runWithNearbyPermissions(::beginSharing) },
-                onReceive = { runWithNearbyPermissions(::beginReceiving) },
+                onShare = { ensureRadios { runWithNearbyPermissions(::beginSharing) } },
+                onReceive = { ensureRadios { runWithNearbyPermissions(::beginReceiving) } },
                 onPeerSelected = { peer ->
                     when {
                         !vpnPrepared -> status =
@@ -341,6 +386,10 @@ class MainActivity : ComponentActivity() {
             current == LinkRole.SHARE && info.isGroupOwner -> {
                 SessionStore.save(this, LinkRole.SHARE, pairingCode)
                 status = "Téléphone B connecté. Le partage continue même si tu fermes l'application."
+                Notifier.post(
+                    this, Notifier.ID_LINK,
+                    "Téléphone B connecté", "Le partage est actif. Il continue même si tu fermes l'application."
+                )
                 startGateway(host)
             }
 
@@ -364,6 +413,10 @@ class MainActivity : ComponentActivity() {
 
                     else -> {
                         status = "Téléphone A connecté. Démarrage du tunnel…"
+                        Notifier.post(
+                            this, Notifier.ID_LINK,
+                            "Téléphone A connecté", "Démarrage de la connexion Internet reçue."
+                        )
                         startReceiverVpn(host, pairingInput, SOURCE_DIRECT)
                     }
                 }
@@ -417,6 +470,10 @@ class MainActivity : ComponentActivity() {
                 wifiDirect.resumeDiscovery()
                 status =
                     "La demande n'a pas abouti. Rapproche les deux téléphones, puis appuie de nouveau sur la ligne à relier."
+                Notifier.post(
+                    this@MainActivity, Notifier.ID_ERROR,
+                    "Connexion non aboutie", "Rapproche les deux téléphones, puis réessaie."
+                )
             }
         }
         connectWatchdog = task
@@ -429,11 +486,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun beginSharing() {
-        if (!wifiOn) {
-            status = "Active le Wi‑Fi, puis appuie de nouveau sur Partager"
-            if (!GuideStore.hasSeen(this)) openGuide()
-            return
-        }
         requestNotificationPermissionIfNeeded()
         role = LinkRole.SHARE
         connecting = false
@@ -600,8 +652,63 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // L'utilisateur a pu activer le Wi-Fi depuis les réglages Android.
+        // L'utilisateur a pu activer le Wi-Fi ou la localisation depuis les réglages Android.
         wifiOn = wifiDirect.wifiEnabled()
+        locationOn = locationEnabled()
+        radioPrompt = (!wifiOn || !locationOn) && !sessionActive
+        if (wifiOn && locationOn) Notifier.cancel(this, Notifier.ID_SETUP)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Retour depuis une autre page (le guide) : on arrive à l'accueil.
+        if (intent.getBooleanExtra(EXTRA_GO_HOME, false) && !sessionActive && !linkUp) {
+            if (role != null) stopEverything()
+        }
+    }
+
+    private fun locationEnabled(): Boolean = try {
+        val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        LocationManagerCompat.isLocationEnabled(manager)
+    } catch (_: Throwable) {
+        true
+    }
+
+    /** Lance l'action si le Wi‑Fi et la localisation sont actifs, sinon les demande. */
+    private fun ensureRadios(action: () -> Unit) {
+        wifiOn = wifiDirect.wifiEnabled()
+        locationOn = locationEnabled()
+        if (wifiOn && locationOn) {
+            radioPrompt = false
+            action()
+        } else {
+            radioPrompt = true
+            Notifier.post(
+                this, Notifier.ID_SETUP,
+                "Active le Wi‑Fi et la localisation",
+                "Sans eux, LinkBridge ne peut ni trouver ni relier les téléphones."
+            )
+        }
+    }
+
+    /** Ouvre directement le bon réglage : le Wi‑Fi d'abord, puis la localisation. */
+    private fun enableRadios() {
+        radioPrompt = false
+        try {
+            if (!wifiOn) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Panneau flottant avec l'interrupteur Wi‑Fi : un seul appui suffit.
+                    startActivity(Intent(Settings.Panel.ACTION_WIFI))
+                } else {
+                    startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                }
+            } else if (!locationOn) {
+                startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            }
+        } catch (_: Exception) {
+            status = "Ouvre les réglages Android, puis active le Wi‑Fi et la localisation"
+        }
     }
 
     /** Ouvre la page Wi-Fi des réglages Android, pour que le prérequis soit à un appui. */
@@ -625,6 +732,10 @@ private fun LinkBridgeApp(
     role: LinkRole?,
     status: String,
     wifiOn: Boolean,
+    locationOn: Boolean,
+    radioPrompt: Boolean,
+    onEnableRadios: () -> Unit,
+    onDismissRadioPrompt: () -> Unit,
     sessionActive: Boolean,
     connecting: Boolean,
     onOpenGuide: () -> Unit,
@@ -655,6 +766,22 @@ private fun LinkBridgeApp(
 
     LinkBridgeTheme {
         if (showAbout) AboutDialog(onDismiss = { showAbout = false })
+        if (radioPrompt) {
+            AlertDialog(
+                onDismissRequest = onDismissRadioPrompt,
+                title = { Text("Active le Wi‑Fi et la localisation") },
+                text = {
+                    Text(
+                        "Sans eux, rien ne passe : LinkBridge ne peut ni trouver l'autre téléphone, " +
+                            "ni créer le lien.\n\n" +
+                            (if (!wifiOn) "• Wi‑Fi : désactivé\n" else "• Wi‑Fi : activé\n") +
+                            (if (!locationOn) "• Localisation : désactivée" else "• Localisation : activée")
+                    )
+                },
+                confirmButton = { TextButton(onClick = onEnableRadios) { Text("Activer") } },
+                dismissButton = { TextButton(onClick = onDismissRadioPrompt) { Text("Plus tard") } }
+            )
+        }
         if (showAppPicker) {
             AppPickerDialog(
                 apps = installedApps,
@@ -669,7 +796,13 @@ private fun LinkBridgeApp(
                 // Barre normale, compacte, qui ne se déplie pas : juste la marque à gauche et
                 // les deux accès à droite. Aucun nom qui flotte au milieu de l'écran.
                 TopAppBar(
-                    title = { LinkBridgeMark(Modifier.size(32.dp)) },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            LinkBridgeMark(Modifier.size(32.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("LinkBridge", fontWeight = FontWeight.Bold)
+                        }
+                    },
                     actions = {
                         TextButton(onClick = onOpenGuide) { Text("Guide") }
                         IconButton(onClick = { showAbout = true }) {
@@ -807,7 +940,7 @@ private fun SessionNotice(onStop: () -> Unit) {
 private fun HeroCard(role: LinkRole?, status: String) {
     Card(
         colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Ink),
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

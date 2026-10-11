@@ -1,7 +1,9 @@
 package com.linkbridge.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -47,11 +49,24 @@ class GuideActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = goHome()
+        })
         setContent {
             LinkBridgeTheme {
-                GuidePage(onClose = { finish() })
+                GuidePage(onClose = { goHome() })
             }
         }
+    }
+
+    /** Retour (flèche, bouton ou geste) : on revient à la page d'accueil de l'application. */
+    private fun goHome() {
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(EXTRA_GO_HOME, true)
+        )
+        finish()
     }
 }
 

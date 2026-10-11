@@ -4,6 +4,22 @@ Côté téléphone uniquement. Le module `core` et l'application PC n'ont pas é
 
 ---
 
+## 0.4.0 — 11 octobre 2026
+
+- **Retour = accueil.** Sur l'écran Partager ou Recevoir, le retour ramène à l'accueil et
+  coupe la recherche. Si un partage est actif, le retour met l'application en arrière-plan
+  sans le couper. Depuis le guide, la flèche, le bouton et le geste de retour ramènent à l'accueil.
+- **Nom dans la barre du haut**, à côté du logo.
+- **Vraies notifications** (bandeau avec son) pour : téléphone connecté, connexion
+  impossible, demande non aboutie, connexion terminée, Wi‑Fi ou localisation à activer.
+  L'autorisation d'afficher les notifications est demandée dès l'ouverture.
+- **Wi‑Fi et localisation** : une fenêtre propose de les activer à l'ouverture et avant
+  Partager ou Recevoir. « Activer » ouvre directement le panneau Wi‑Fi, puis le réglage
+  de localisation.
+- **Carte du haut** : coins moins arrondis (32 dp → 12 dp).
+
+---
+
 ## 0.3.1 — 11 octobre 2026
 
 ### « Connexion impossible » sur le téléphone B, sans aucune ligne pour réessayer
