@@ -4,6 +4,23 @@ Côté téléphone uniquement. Le module `core` et l'application PC n'ont pas é
 
 ---
 
+## 0.3.1 — 11 octobre 2026
+
+### « Connexion impossible » sur le téléphone B, sans aucune ligne pour réessayer
+
+Trois causes cumulées, toutes dans `WifiDirectController` :
+
+- Pendant l'invitation, Android signale « pas de groupe ». Le code y voyait un groupe dissous
+  et appelait `removeGroup()`, ce qui annulait la connexion qui venait de partir et vidait la
+  liste des téléphones. Il ne défait désormais que si un groupe a réellement existé.
+- `connect()` partait juste après `stopPeerDiscovery()`, qui est asynchrone : erreur
+  générique sur beaucoup de Samsung. On attend maintenant la fin de l'arrêt, puis deux
+  nouveaux essais automatiques sont faits avant d'afficher l'erreur.
+- Après un échec la recherche n'était pas relancée : l'écran affichait « Recherche… » sans
+  rien à toucher. Elle reprend maintenant toute seule.
+
+---
+
 ## 0.3.0 — 8 octobre 2026
 
 ### La barre du haut

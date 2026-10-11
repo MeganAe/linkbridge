@@ -413,6 +413,8 @@ class MainActivity : ComponentActivity() {
         val task = Runnable {
             if (connecting) {
                 connecting = false
+                wifiDirect.cancelConnect()
+                wifiDirect.resumeDiscovery()
                 status =
                     "La demande n'a pas abouti. Rapproche les deux téléphones, puis appuie de nouveau sur la ligne à relier."
             }

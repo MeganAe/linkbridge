@@ -125,9 +125,15 @@ class WifiDirectController(
                                 onGroupInfo(group.networkName, groupPassphrase(group))
                             }
                         }
-                    } else {
-                        // Groupe dissous, invitation refusée ou négociation abandonnée : on
-                        // relâche tout pour ne pas relancer une invitation en boucle.
+                    } else if (connectionPending && !formed) {
+                        // Négociation en cours : Android signale « pas de groupe » pendant
+                        // toute la durée de l'invitation. Appeler removeGroup() ici annulait
+                        // la connexion qui venait de partir (« Connexion impossible » à
+                        // chaque essai) et vidait la liste des téléphones. On attend le
+                        // résultat de connect() ou le surveillant de trente secondes.
+                    } else if (formed || hosting) {
+                        // Groupe réellement dissous : on relâche tout pour ne pas relancer
+                        // une invitation en boucle.
                         connectionPending = false
                         hosting = false
                         onPeers(emptyList())
@@ -138,6 +144,9 @@ class WifiDirectController(
                         }
                         manager.removeGroup(channel, quiet())
                     }
+                    // Sinon : simple notification sans groupe ni invitation (recherche en
+                    // cours sur le téléphone B). Il n'y a rien à défaire, et surtout pas la
+                    // liste des téléphones trouvés.
                 }
             }
         }
@@ -271,34 +280,88 @@ class WifiDirectController(
             return false
         }
         connectionPending = true
-        stopDiscovery()
+        // Arrêt de la recherche, puis attente de sa fin réelle : appeler connect() dans la
+        // foulée de stopPeerDiscovery() renvoie ERROR sur beaucoup de Samsung, car l'arrêt
+        // est asynchrone et le pilote est encore occupé.
+        stopDiscoveryThen { sendInvitation(peer, 0) }
+        return true
+    }
+
+    private fun sendInvitation(peer: WifiP2pDevice, attempt: Int) {
+        if (!connectionPending) return
         val config = WifiP2pConfig().apply {
             deviceAddress = peer.deviceAddress
             // Le téléphone A crée le groupe : il reste la passerelle, celui qui a Internet.
             groupOwnerIntent = 0
         }
-        manager.connect(channel, config, object : WifiP2pManager.ActionListener {
-            override fun onSuccess() {
-                onStatus("Demande envoyée à ${peer.deviceName}. Accepte la connexion sur le téléphone A.")
-            }
-
-            override fun onFailure(reason: Int) {
-                connectionPending = false
-                val message = when (reason) {
-                    WifiP2pManager.BUSY ->
-                        "Wi‑Fi Direct est déjà occupé. Attends quelques secondes, puis réessaie"
-                    WifiP2pManager.ERROR ->
-                        "Connexion impossible. Vérifie que le téléphone A affiche bien son code"
-                    WifiP2pManager.P2P_UNSUPPORTED ->
-                        "Ce téléphone ne prend pas en charge Wi‑Fi Direct"
-                    else ->
-                        "Connexion impossible. Code $reason"
+        try {
+            manager.connect(channel, config, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    onStatus("Demande envoyée à ${peer.deviceName}. Accepte la connexion sur le téléphone A.")
                 }
-                onStatus(message)
-                onConnectFailed(message, true)
+
+                override fun onFailure(reason: Int) {
+                    if (!connectionPending) return
+                    val transient = reason == WifiP2pManager.ERROR || reason == WifiP2pManager.BUSY
+                    if (transient && attempt < 2) {
+                        // Échec passager du pilote : on repart d'une négociation propre
+                        // et on réessaie seul, deux fois, avant de déranger l'utilisateur.
+                        manager.cancelConnect(channel, quiet())
+                        handler.postDelayed({ sendInvitation(peer, attempt + 1) }, 1200)
+                        return
+                    }
+                    connectionPending = false
+                    val message = when (reason) {
+                        WifiP2pManager.BUSY ->
+                            "Wi‑Fi Direct est déjà occupé. Attends quelques secondes, puis réessaie"
+                        WifiP2pManager.ERROR ->
+                            "Connexion impossible. Vérifie que le téléphone A affiche bien son code"
+                        WifiP2pManager.P2P_UNSUPPORTED ->
+                            "Ce téléphone ne prend pas en charge Wi‑Fi Direct"
+                        else ->
+                            "Connexion impossible. Code $reason"
+                    }
+                    onStatus(message)
+                    // La recherche reprend : sans elle la liste restait vide et l'écran
+                    // affichait « Recherche… » sans aucune ligne sur laquelle réessayer.
+                    resumeDiscovery()
+                    onConnectFailed(message, true)
+                }
+            })
+        } catch (_: SecurityException) {
+            connectionPending = false
+            onConnectFailed("Autorisation Wi‑Fi retirée. Relance l'application", false)
+        }
+    }
+
+    /** Relance la recherche de pairs sur le téléphone B après un échec. */
+    fun resumeDiscovery() {
+        if (!receiverMode) return
+        try {
+            manager.discoverPeers(channel, quiet())
+            handler.postDelayed({ if (receiverMode) requestPeers() }, 1500)
+        } catch (_: SecurityException) {
+        }
+    }
+
+    /** Arrête la recherche, attend sa fin, puis lance la suite une seule fois. */
+    private fun stopDiscoveryThen(action: () -> Unit) {
+        var done = false
+        val runOnce = Runnable {
+            if (!done) {
+                done = true
+                handler.postDelayed({ if (connectionPending) action() }, 500)
             }
-        })
-        return true
+        }
+        try {
+            manager.stopPeerDiscovery(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() = runOnce.run()
+                override fun onFailure(reason: Int) = runOnce.run()
+            })
+        } catch (_: Throwable) {
+            runOnce.run()
+        }
+        handler.postDelayed(runOnce, 900)
     }
 
     /** Renonce à l'invitation en cours sans casser le groupe du téléphone A. */
