@@ -66,7 +66,7 @@ object Notifier {
                 context,
                 if (important) CHANNEL_ALERT else CHANNEL_INFO
             )
-                .setSmallIcon(R.drawable.ic_stat_linkbridge)
+                .setSmallIcon(R.drawable.linkbridge_icone)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))

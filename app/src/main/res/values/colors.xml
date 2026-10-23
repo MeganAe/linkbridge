@@ -1,5 +1,13 @@
 <resources>
-    <color name="ic_launcher_background">#2D1B69</color>
-    <color name="linkbridge_ink">#251A46</color>
-    <color name="linkbridge_canvas">#FFFBFF</color>
+    <!-- Fond de l'icône adaptative et du splash : violet profond de la marque. -->
+    <color name="ic_launcher_background">#1E1B4B</color>
+
+    <!-- Palette sobre : trois couleurs seulement, plus le blanc et le gris. -->
+    <color name="linkbridge_ink">#1E1B4B</color>
+    <color name="linkbridge_canvas">#FFFFFF</color>
+    <color name="linkbridge_primary">#6D55D9</color>
+    <color name="linkbridge_accent">#14B8A6</color>
+    <color name="linkbridge_surface">#FFFFFF</color>
+    <color name="linkbridge_on_surface">#1E1B4B</color>
+    <color name="linkbridge_on_surface_variant">#6B7280</color>
 </resources>

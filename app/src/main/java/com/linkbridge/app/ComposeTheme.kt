@@ -8,29 +8,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-/** Palette de l'application, partagée par l'écran principal et la page du guide. */
+/** Palette de l'application : sobre, trois couleurs actives maximum. */
 fun linkBridgeColorScheme() = lightColorScheme(
-    primary = LinkBridgeBrand.Purple,
+    primary = LinkBridgeBrand.Primary,
     onPrimary = Color.White,
-    primaryContainer = LinkBridgeBrand.Lavender,
+    primaryContainer = Color(0xFFEAE3FF),
     onPrimaryContainer = LinkBridgeBrand.Ink,
-    secondary = LinkBridgeBrand.Coral,
+    secondary = LinkBridgeBrand.Accent,
     onSecondary = Color.White,
-    secondaryContainer = LinkBridgeBrand.Butter,
+    secondaryContainer = Color(0xFFE0F7F4),
     onSecondaryContainer = LinkBridgeBrand.Ink,
-    tertiary = Color(0xFF087F6C),
-    background = LinkBridgeBrand.Background,
+    background = LinkBridgeBrand.Canvas,
     onBackground = LinkBridgeBrand.Ink,
-    surface = LinkBridgeBrand.Background,
-    onSurface = LinkBridgeBrand.Ink
+    surface = LinkBridgeBrand.Surface,
+    onSurface = LinkBridgeBrand.OnSurface,
+    surfaceVariant = Color(0xFFF5F0FF),
+    onSurfaceVariant = LinkBridgeBrand.OnSurfaceVariant,
+    inverseSurface = LinkBridgeBrand.Ink,
+    inverseOnSurface = Color.White
 )
 
 fun linkBridgeShapes() = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(36.dp)
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp)
 )
 
 /**

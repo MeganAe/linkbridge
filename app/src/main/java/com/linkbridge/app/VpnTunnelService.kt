@@ -186,7 +186,7 @@ class VpnTunnelService : VpnService() {
             manager.notify(
                 NOTIFICATION_ID_STOPPED,
                 NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_stat_linkbridge)
+                    .setSmallIcon(R.drawable.linkbridge_icone)
                     .setContentTitle("LinkBridge n'a pas démarré")
                     .setContentText(
                         "Vérifie que le Wi‑Fi est actif et que les applications choisies sont " +
@@ -206,7 +206,7 @@ class VpnTunnelService : VpnService() {
             getSystemService(NotificationManager::class.java).notify(
                 NOTIFICATION_ID_ENDED,
                 NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_stat_linkbridge)
+                    .setSmallIcon(R.drawable.linkbridge_icone)
                     .setContentTitle("LinkBridge · connexion terminée")
                     .setContentText("Le lien avec l'autre appareil s'est terminé.")
                     .setAutoCancel(true)
@@ -274,7 +274,7 @@ class VpnTunnelService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_linkbridge)
+            .setSmallIcon(R.drawable.linkbridge_icone)
             .setContentTitle("LinkBridge · connexion reçue")
             .setContentText("Le tunnel continue en arrière-plan")
             .setContentIntent(open)

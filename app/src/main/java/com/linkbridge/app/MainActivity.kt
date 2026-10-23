@@ -34,6 +34,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,9 +78,9 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -924,6 +925,36 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private enum class LinkRole { SHARE, RECEIVE }
+
+private const val SOURCE_DIRECT = "direct"
+private const val SOURCE_MANUAL = "manual"
+
+/**
+ * Construit le graphique de la marque : deux piliers qui deviennent un chemin.
+ * Dessiné en Compose pour éviter toute dépendance à une ressource bitmap.
+ */
+@Composable
+private fun LinkBridgeMark(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(LinkBridgeBrand.Ink),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(10.dp).clip(CircleShape).background(LinkBridgeBrand.Accent)
+            )
+            Spacer(Modifier.width(4.dp))
+            Box(
+                Modifier.size(10.dp).clip(CircleShape).background(Color.White)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LinkBridgeApp(
@@ -998,26 +1029,26 @@ private fun LinkBridgeApp(
             )
         }
         Scaffold(
-            containerColor = LinkBridgeBrand.Background,
+            containerColor = LinkBridgeBrand.Canvas,
             topBar = {
-                // Barre normale, compacte, qui ne se déplie pas : juste la marque à gauche et
-                // les deux accès à droite. Aucun nom qui flotte au milieu de l'écran.
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             LinkBridgeMark(Modifier.size(32.dp))
                             Spacer(Modifier.width(10.dp))
-                            Text("LinkBridge", fontWeight = FontWeight.Bold)
+                            Text("LinkBridge", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
                         }
                     },
                     actions = {
-                        TextButton(onClick = onOpenGuide) { Text("Guide") }
+                        TextButton(onClick = onOpenGuide) {
+                            Text("Guide", color = LinkBridgeBrand.Primary)
+                        }
                         IconButton(onClick = { showAbout = true }) {
-                            Icon(Icons.Outlined.Info, contentDescription = "À propos")
+                            Icon(Icons.Outlined.Info, contentDescription = "À propos", tint = LinkBridgeBrand.Ink)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = LinkBridgeBrand.Background,
+                        containerColor = LinkBridgeBrand.Canvas,
                         titleContentColor = LinkBridgeBrand.Ink,
                         navigationIconContentColor = LinkBridgeBrand.Ink,
                         actionIconContentColor = LinkBridgeBrand.Ink
@@ -1053,13 +1084,13 @@ private fun LinkBridgeApp(
                     Text(
                         "Que veux-tu faire ?",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = LinkBridgeBrand.Ink
                     )
                     RoleCard(
                         icon = Icons.Outlined.Wifi,
                         title = "Partager Internet",
                         description = "Ce téléphone possède Internet et devient le pont.",
-                        container = LinkBridgeBrand.Mint,
                         buttonText = "Partager",
                         onClick = onShare
                     )
@@ -1067,7 +1098,6 @@ private fun LinkBridgeApp(
                         icon = Icons.Outlined.PhoneAndroid,
                         title = "Recevoir Internet",
                         description = "Ce téléphone se connecte au pont sans hotspot classique.",
-                        container = LinkBridgeBrand.Lavender,
                         buttonText = "Recevoir",
                         onClick = onReceive
                     )
@@ -1135,20 +1165,24 @@ private fun SessionNotice(onStop: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(LinkBridgeBrand.Mint)
+            .clip(RoundedCornerShape(14.dp))
+            .background(LinkBridgeBrand.Primary.copy(alpha = 0.10f))
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Outlined.Security, contentDescription = null, tint = LinkBridgeBrand.Ink)
+        Box(
+            Modifier.size(8.dp).clip(CircleShape).background(LinkBridgeBrand.Accent)
+        )
         Spacer(Modifier.width(12.dp))
         Text(
             "Le partage continue même si tu fermes l'application. La notification permet de le suivre et de l'arrêter.",
             style = MaterialTheme.typography.bodySmall,
-            color = LinkBridgeBrand.Ink,
+            color = LinkBridgeBrand.OnSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
-        TextButton(onClick = onStop) { Text("Arrêter") }
+        TextButton(onClick = onStop) {
+            Text("Arrêter", color = LinkBridgeBrand.Primary)
+        }
     }
 }
 
@@ -1156,15 +1190,20 @@ private fun SessionNotice(onStop: () -> Unit) {
 private fun HeroCard(role: LinkRole?, status: String) {
     Card(
         colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Ink),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                LinkBridgeMark(Modifier.size(58.dp))
-                Spacer(Modifier.width(14.dp))
+                LinkBridgeMark(Modifier.size(56.dp))
+                Spacer(Modifier.width(16.dp))
                 Column {
-                    Text("Un pont, pas un hotspot", color = LinkBridgeBrand.Mint, fontSize = 14.sp)
+                    Text(
+                        "Un pont, pas un hotspot",
+                        color = LinkBridgeBrand.Primary.copy(alpha = 0.9f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         when (role) {
                             LinkRole.SHARE -> "Tu partages"
@@ -1182,10 +1221,9 @@ private fun HeroCard(role: LinkRole?, status: String) {
                     Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (role == null) LinkBridgeBrand.Coral else LinkBridgeBrand.Mint)
+                        .background(if (role == null) LinkBridgeBrand.OnSurfaceVariant else LinkBridgeBrand.Accent)
                 )
                 Spacer(Modifier.width(8.dp))
-                // Le statut change souvent : il glisse au lieu de sauter d'un coup.
                 AnimatedContent(
                     targetState = status,
                     transitionSpec = {
@@ -1194,7 +1232,7 @@ private fun HeroCard(role: LinkRole?, status: String) {
                     },
                     label = "statut"
                 ) { current ->
-                    Text(current, color = Color.White.copy(alpha = 0.88f))
+                    Text(current, color = Color.White.copy(alpha = 0.9f))
                 }
             }
         }
@@ -1206,31 +1244,82 @@ private fun RoleCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     description: String,
-    container: Color,
     buttonText: String,
     onClick: () -> Unit
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = container),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier.size(46.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.78f)),
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(LinkBridgeBrand.Primary.copy(alpha = 0.10f)),
                     contentAlignment = Alignment.Center
-                ) { Icon(icon, contentDescription = null, tint = LinkBridgeBrand.Ink) }
-                Spacer(Modifier.width(12.dp))
+                ) {
+                    Icon(icon, contentDescription = null, tint = LinkBridgeBrand.Primary)
+                }
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(description, style = MaterialTheme.typography.bodyMedium)
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
+                    Text(description, style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.OnSurfaceVariant)
                 }
             }
             Button(
                 onClick = onClick,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Ink)
-            ) { Text(buttonText) }
+                colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Primary)
+            ) {
+                Text(buttonText, color = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreparationCard(
+    wifiOn: Boolean,
+    onOpenWifiSettings: () -> Unit,
+    onOpenGuide: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Info, contentDescription = null, tint = LinkBridgeBrand.Primary)
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        if (wifiOn) "Prêt à créer un lien" else "Active le Wi‑Fi",
+                        fontWeight = FontWeight.Bold,
+                        color = LinkBridgeBrand.Ink
+                    )
+                    Text(
+                        if (wifiOn) "Le Wi‑Fi est actif. Tu peux partager ou recevoir une connexion."
+                        else "Le Wi‑Fi doit être actif pour que LinkBridge trouve l'autre téléphone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LinkBridgeBrand.OnSurfaceVariant
+                    )
+                }
+            }
+            if (!wifiOn) {
+                Button(
+                    onClick = onOpenWifiSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Primary)
+                ) {
+                    Text("Activer le Wi‑Fi", color = Color.White)
+                }
+            }
+            TextButton(onClick = onOpenGuide) {
+                Text("Voir le guide", color = LinkBridgeBrand.Primary)
+            }
         }
     }
 }
@@ -1248,37 +1337,53 @@ private fun SharePanel(
     onStop: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Code de liaison", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Butter)) {
+        Text("Code de liaison", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+        ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Entre ce code sur le téléphone B", style = MaterialTheme.typography.bodyMedium)
+                Text("Entre ce code sur le téléphone B", style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.OnSurfaceVariant)
                 Text(
                     pairingCode.chunked(3).joinToString(" "),
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Black,
                     color = LinkBridgeBrand.Ink,
-                    letterSpacing = 5.sp
+                    letterSpacing = 6.sp
                 )
-                AssistChip(onClick = {}, label = { Text("Wi‑Fi Direct privé") }, leadingIcon = { Icon(Icons.Outlined.Link, null) })
+                AssistChip(
+                    onClick = {},
+                    label = { Text("Wi‑Fi Direct privé", fontWeight = FontWeight.Medium) },
+                    leadingIcon = { Icon(Icons.Outlined.Link, null, tint = LinkBridgeBrand.Primary) }
+                )
             }
         }
         if (groupSsid != null) {
-            Text("Accès PC sur ce réseau", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Mint)) {
+            Text("Accès PC sur ce réseau", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+            ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         "Un ordinateur peut rejoindre ce réseau Wi‑Fi, puis utiliser le relais avec " +
                             "LinkBridge PC. Adresse " + GatewayService.DEFAULT_GROUP_OWNER_ADDRESS +
                             ", port " + Socks5Gateway.DEFAULT_PORT + ", et le code ci-dessus.",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LinkBridgeBrand.OnSurfaceVariant
                     )
-                    Text("Réseau : $groupSsid", fontWeight = FontWeight.Bold)
+                    Text("Réseau : $groupSsid", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
                     if (groupPassphrase != null) {
-                        Text("Mot de passe : $groupPassphrase", fontWeight = FontWeight.Bold)
+                        Text("Mot de passe : $groupPassphrase", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
                     } else {
                         Text(
                             "Mot de passe non disponible sur cet appareil.",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LinkBridgeBrand.OnSurfaceVariant
                         )
                     }
                 }
@@ -1288,8 +1393,15 @@ private fun SharePanel(
         if (sessionActive && batteryRestricted) {
             BatteryNotice(onOpenSettings = onOpenBatterySettings)
         }
-        OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Outlined.StopCircle, null)
+        OutlinedButton(
+            onClick = onStop,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = LinkBridgeBrand.Ink,
+                borderColor = LinkBridgeBrand.OnSurfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Icon(Icons.Outlined.StopCircle, null, tint = LinkBridgeBrand.Ink)
             Spacer(Modifier.width(8.dp))
             Text("Arrêter le partage")
         }
@@ -1319,22 +1431,37 @@ private fun ReceivePanel(
     onStop: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Connexion sécurisée", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Text("Connexion sécurisée", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas)
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Seulement certaines applications", fontWeight = FontWeight.Bold)
+                        Text("Seulement certaines applications", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
                         Text(
                             if (restrictApps) "Seules les applications choisies utilisent la connexion reçue."
                             else "Toutes les applications utilisent la connexion reçue.",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LinkBridgeBrand.OnSurfaceVariant
                         )
                     }
-                    Switch(checked = restrictApps, onCheckedChange = onRestrictChange)
+                    Switch(checked = restrictApps, onCheckedChange = onRestrictChange, colors = SwitchDefaults.colors(
+                        checkedThumbColor = LinkBridgeBrand.Primary,
+                        checkedTrackColor = LinkBridgeBrand.Primary.copy(alpha = 0.3f)
+                    ))
                 }
                 if (restrictApps) {
-                    OutlinedButton(onClick = onChooseApps, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = onChooseApps,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = LinkBridgeBrand.Primary,
+                            borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
+                        )
+                    ) {
                         Text(
                             when {
                                 selectedCount == 0 -> "Choisir les applications"
@@ -1346,7 +1473,8 @@ private fun ReceivePanel(
                     Text(
                         "Les autres applications gardent la connexion habituelle de ce téléphone. " +
                             "Le choix s'applique à la prochaine connexion.",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LinkBridgeBrand.OnSurfaceVariant
                     )
                 }
             }
@@ -1355,8 +1483,8 @@ private fun ReceivePanel(
             value = pairingInput,
             onValueChange = onPairingInputChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Code du téléphone A") },
-            supportingText = { Text("Le code ne quitte pas les deux téléphones.") },
+            label = { Text("Code du téléphone A", color = LinkBridgeBrand.OnSurfaceVariant) },
+            supportingText = { Text("Le code ne quitte pas les deux téléphones.", style = MaterialTheme.typography.bodySmall, color = LinkBridgeBrand.OnSurfaceVariant) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
@@ -1366,12 +1494,16 @@ private fun ReceivePanel(
             LinkTestCard(state = linkTest, onTest = onTestLink)
         }
         if (connecting) {
-            Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Butter)) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Primary.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = LinkBridgeBrand.Ink
+                        color = LinkBridgeBrand.Primary
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
@@ -1383,35 +1515,43 @@ private fun ReceivePanel(
             }
         }
         if (peers.isEmpty() && !connecting) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("Recherche des appareils LinkBridge à proximité…")
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = LinkBridgeBrand.Primary)
+            Text("Recherche des appareils LinkBridge à proximité…", style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.OnSurfaceVariant)
         } else if (peers.isNotEmpty()) {
-            Text("Téléphones trouvés", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Téléphones trouvés", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
             peers.forEach { peer ->
-                OutlinedCard(onClick = { onPeerSelected(peer) }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(
+                    onClick = { onPeerSelected(peer) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas)
+                ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Devices, contentDescription = null, tint = LinkBridgeBrand.Purple)
+                        Icon(Icons.Outlined.Devices, contentDescription = null, tint = LinkBridgeBrand.Primary)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(peer.deviceName.ifBlank { "Téléphone sans nom" }, fontWeight = FontWeight.Bold)
-                            Text("Appuie pour demander la connexion", style = MaterialTheme.typography.bodySmall)
+                            Text(peer.deviceName.ifBlank { "Téléphone sans nom" }, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
+                            Text("Appuie pour demander la connexion", style = MaterialTheme.typography.bodySmall, color = LinkBridgeBrand.OnSurfaceVariant)
                         }
-                        TextButton(onClick = { onPeerSelected(peer) }) { Text("Lier") }
+                        TextButton(onClick = { onPeerSelected(peer) }) {
+                            Text("Lier", color = LinkBridgeBrand.Primary)
+                        }
                     }
                 }
             }
         }
-        Text("Connexion manuelle sur le réseau local", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Connexion manuelle sur le réseau local", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
         Text(
             "Pour un relais sans Wi‑Fi Direct : un PC ou un téléphone A sur le même réseau.",
-            style = MaterialTheme.typography.bodySmall
+            style = MaterialTheme.typography.bodySmall,
+            color = LinkBridgeBrand.OnSurfaceVariant
         )
         OutlinedTextField(
             value = manualIp,
             onValueChange = onManualIpChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Adresse du relais") },
-            supportingText = { Text("Ex. 192.168.1.10") },
+            label = { Text("Adresse du relais", color = LinkBridgeBrand.OnSurfaceVariant) },
+            supportingText = { Text("Ex. 192.168.1.10", style = MaterialTheme.typography.bodySmall, color = LinkBridgeBrand.OnSurfaceVariant) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
         )
@@ -1419,17 +1559,26 @@ private fun ReceivePanel(
             value = manualCode,
             onValueChange = onManualCodeChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Code du relais") },
+            label = { Text("Code du relais", color = LinkBridgeBrand.OnSurfaceVariant) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
         Button(
             onClick = { onManualConnect(manualIp, manualCode) },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Ink)
-        ) { Text("Se connecter au relais") }
+            colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Primary)
+        ) {
+            Text("Se connecter au relais", color = Color.White)
+        }
 
-        OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Annuler") }
+        OutlinedButton(
+            onClick = onStop,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = LinkBridgeBrand.Ink,
+                borderColor = LinkBridgeBrand.OnSurfaceVariant.copy(alpha = 0.5f)
+            )
+        ) { Text("Annuler") }
     }
 }
 
@@ -1443,19 +1592,30 @@ private fun ReceivePanel(
 @Composable
 private fun InternetNotice(internetOk: Boolean, onRecheck: () -> Unit) {
     if (internetOk) return
-    Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Butter)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Primary.copy(alpha = 0.08f)),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Info, contentDescription = null, tint = LinkBridgeBrand.Ink)
+                Icon(Icons.Outlined.Info, contentDescription = null, tint = LinkBridgeBrand.Primary)
                 Spacer(Modifier.width(8.dp))
-                Text("Ce téléphone n'a pas Internet", fontWeight = FontWeight.Bold)
+                Text("Ce téléphone n'a pas Internet", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
             }
             Text(
                 "Le lien peut se créer, mais rien ne passera : active les données mobiles ou " +
                     "reconnecte le Wi‑Fi, puis appuie sur Revérifier.",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = LinkBridgeBrand.OnSurfaceVariant
             )
-            OutlinedButton(onClick = onRecheck) { Text("Revérifier") }
+            OutlinedButton(
+                onClick = onRecheck,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = LinkBridgeBrand.Primary,
+                    borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
+                )
+            ) { Text("Revérifier") }
         }
     }
 }
@@ -1468,23 +1628,34 @@ private fun InternetNotice(internetOk: Boolean, onRecheck: () -> Unit) {
  */
 @Composable
 private fun BatteryNotice(onOpenSettings: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Lavender)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Primary.copy(alpha = 0.08f)),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Outlined.BatteryAlert,
                     contentDescription = null,
-                    tint = LinkBridgeBrand.Purple
+                    tint = LinkBridgeBrand.Primary
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Économie de batterie", fontWeight = FontWeight.Bold)
+                Text("Économie de batterie", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
             }
             Text(
                 "Android peut arrêter le partage pour économiser la batterie, surtout l'écran " +
                     "éteint. Autorise LinkBridge à tourner sans restriction.",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = LinkBridgeBrand.OnSurfaceVariant
             )
-            OutlinedButton(onClick = onOpenSettings) { Text("Ouvrir les réglages") }
+            OutlinedButton(
+                onClick = onOpenSettings,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = LinkBridgeBrand.Primary,
+                    borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
+                )
+            ) { Text("Ouvrir les réglages") }
         }
     }
 }
@@ -1497,13 +1668,18 @@ private fun BatteryNotice(onOpenSettings: () -> Unit) {
  */
 @Composable
 private fun LinkTestCard(state: LinkTestState, onTest: () -> Unit) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas)
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Vérifier la connexion", fontWeight = FontWeight.Bold)
+            Text("Vérifier la connexion", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
             Text(
                 "LinkBridge interroge le relais avec ton code, puis demande une page minuscule " +
                     "à travers lui.",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = LinkBridgeBrand.OnSurfaceVariant
             )
             when (state) {
                 is LinkTestState.Idle -> Unit
@@ -1511,37 +1687,42 @@ private fun LinkTestCard(state: LinkTestState, onTest: () -> Unit) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
-                        color = LinkBridgeBrand.Purple
+                        color = LinkBridgeBrand.Primary
                     )
                     Spacer(Modifier.width(10.dp))
-                    Text("Test en cours…", style = MaterialTheme.typography.bodySmall)
+                    Text("Test en cours…", style = MaterialTheme.typography.bodySmall, color = LinkBridgeBrand.OnSurfaceVariant)
                 }
 
                 is LinkTestState.Success -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Outlined.CheckCircle,
                         contentDescription = null,
-                        tint = LinkBridgeBrand.Purple,
+                        tint = LinkBridgeBrand.Accent,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Internet passe. Le relais répond : ${state.detail}",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        color = LinkBridgeBrand.Accent
                     )
                 }
 
                 is LinkTestState.Failure -> Text(
                     state.message,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = LinkBridgeBrand.Coral
+                    color = LinkBridgeBrand.Primary
                 )
             }
             OutlinedButton(
                 onClick = onTest,
                 enabled = state !is LinkTestState.Running,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = LinkBridgeBrand.Primary,
+                    borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
+                )
             ) {
                 Text(
                     when (state) {
@@ -1557,15 +1738,21 @@ private fun LinkTestCard(state: LinkTestState, onTest: () -> Unit) {
 
 @Composable
 private fun TrustPanel() {
-    Card(colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Lavender)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.15f))
+    ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
-            Icon(Icons.Outlined.Security, contentDescription = null, tint = LinkBridgeBrand.Purple)
+            Icon(Icons.Outlined.Security, contentDescription = null, tint = LinkBridgeBrand.Primary)
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("Clair et contrôlable", fontWeight = FontWeight.Bold)
+                Text("Clair et contrôlable", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
                 Text(
                     "Android affiche le VPN et une notification pendant la connexion. LinkBridge ne démarre rien sans ton accord.",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LinkBridgeBrand.OnSurfaceVariant
                 )
             }
         }
@@ -1575,7 +1762,7 @@ private fun TrustPanel() {
 @Composable
 internal fun LinkBridgeMark(modifier: Modifier = Modifier) {
     Image(
-        painter = painterResource(R.drawable.ic_linkbridge),
+        painter = painterResource(R.drawable.linkbridge_icone),
         contentDescription = "LinkBridge",
         modifier = modifier.clip(CircleShape)
     )
@@ -1585,31 +1772,39 @@ internal fun LinkBridgeMark(modifier: Modifier = Modifier) {
 private fun AboutDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
-        title = { Text("LinkBridge ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Bold) },
+        confirmButton = { TextButton(onClick = onDismiss) {
+            Text("Fermer", color = LinkBridgeBrand.Primary)
+        } },
+        title = { Text("LinkBridge ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
-                Text("Partage la connexion Internet d'un téléphone vers un autre via Wi‑Fi Direct, sans hotspot classique.")
-                Text("Téléphone A : celui qui a Internet", fontWeight = FontWeight.Bold)
-                Text("Appuie sur « Partager » et communique le code à 6 chiffres affiché.")
-                Text("Téléphone B : celui qui reçoit", fontWeight = FontWeight.Bold)
-                Text("Appuie sur « Recevoir », autorise le VPN, entre le code, puis choisis le téléphone A dans la liste.")
+                Text(
+                    "Partage la connexion Internet d'un téléphone vers un autre via Wi‑Fi Direct, sans hotspot classique.",
+                    color = LinkBridgeBrand.OnSurfaceVariant
+                )
+                Text("Téléphone A : celui qui a Internet", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
+                Text("Appuie sur « Partager » et communique le code à 6 chiffres affiché.", color = LinkBridgeBrand.OnSurfaceVariant)
+                Text("Téléphone B : celui qui reçoit", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
+                Text("Appuie sur « Recevoir », autorise le VPN, entre le code, puis choisis le téléphone A dans la liste.", color = LinkBridgeBrand.OnSurfaceVariant)
                 Text(
                     "Android affiche une icône VPN et une notification pendant la connexion. Le partage continue en arrière-plan quand tu quittes l'application : il ne s'arrête que sur le bouton Arrêter.",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LinkBridgeBrand.OnSurfaceVariant
                 )
                 HorizontalDivider()
-                Text("Conçu et développé par Metoushela Walker", fontWeight = FontWeight.Bold)
+                Text("Conçu et développé par Metoushela Walker", fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
                 Text(
                     "Dépôt du projet : https://github.com/MeganAe/linkbridge",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LinkBridgeBrand.OnSurfaceVariant
                 )
                 Text(
                     "Logiciel sous licence MIT. © 2026 Metoushela Walker.",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LinkBridgeBrand.OnSurfaceVariant
                 )
             }
         }

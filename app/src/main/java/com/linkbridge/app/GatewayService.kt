@@ -87,7 +87,7 @@ class GatewayService : Service() {
             getSystemService(NotificationManager::class.java).notify(
                 NOTIFICATION_ID_ENDED,
                 NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_stat_linkbridge)
+                    .setSmallIcon(R.drawable.linkbridge_icone)
                     .setContentTitle("LinkBridge · partage terminé")
                     .setContentText("La connexion avec l'autre appareil s'est terminée.")
                     .setAutoCancel(true)
@@ -150,7 +150,7 @@ class GatewayService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_linkbridge)
+            .setSmallIcon(R.drawable.linkbridge_icone)
             .setContentTitle("LinkBridge · partage actif")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
