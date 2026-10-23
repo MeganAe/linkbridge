@@ -47,7 +47,7 @@ internal fun PreparationCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (wifiOn) LinkBridgeBrand.Lavender else LinkBridgeBrand.Butter
+            containerColor = if (wifiOn) LinkBridgeBrand.Mint else LinkBridgeBrand.Butter
         ),
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth()
@@ -128,7 +128,7 @@ internal fun GuideHero() {
             Column {
                 Text(
                     "Un pont, pas un hotspot",
-                    color = LinkBridgeBrand.Mint,
+                    color = LinkBridgeBrand.TealLight,
                     style = MaterialTheme.typography.labelLarge
                 )
                 Spacer(Modifier.height(2.dp))

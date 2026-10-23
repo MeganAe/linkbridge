@@ -1,6 +1,6 @@
 <resources>
-    <!-- Fond de l'icône adaptative et du splash : violet profond de la marque. -->
-    <color name="ic_launcher_background">#1E1B4B</color>
+    <!-- Fond de l'icône adaptative : le violet du nouveau logo. -->
+    <color name="ic_launcher_background">#5B3DF5</color>
 
     <!-- Palette sobre : trois couleurs seulement, plus le blanc et le gris. -->
     <color name="linkbridge_ink">#1E1B4B</color>

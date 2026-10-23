@@ -14,7 +14,7 @@
          rétablit exactement le thème normal. -->
     <style name="Theme.LinkBridge.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/linkbridge_ink</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/linkbridge_icone</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         <item name="windowSplashScreenAnimationDuration">600</item>
         <item name="postSplashScreenTheme">@style/Theme.LinkBridge</item>
     </style>

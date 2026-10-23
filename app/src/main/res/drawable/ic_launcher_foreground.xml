@@ -1,9 +1,12 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path android:fillColor="#C7F7E8" android:pathData="M30,28h17v10h-17a11,11 0,0 0,0 22h17v10h-17a21,21 0,0 1,0 -42z" />
-    <path android:fillColor="#FF7657" android:pathData="M61,28h17a21,21 0,0 1,0 42h-17v-10h17a11,11 0,0 0,0 -22h-17z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M40,49h28v10h-28z" />
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Premier plan de l'icône adaptative : le nouveau logo. Ses coins transparents laissent voir
+  le fond, de la même couleur violette, donc le carré est continu. Le marquage de 10 % garde
+  le dessin dans la zone toujours visible, quel que soit le masque du lanceur.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/linkbridge_icone"
+    android:insetLeft="10%"
+    android:insetTop="10%"
+    android:insetRight="10%"
+    android:insetBottom="10%" />

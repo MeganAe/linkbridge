@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icône de l'écran de démarrage : le logo carré aux coins arrondis, tel qu'il est dessiné.
+
+  Android 12 et plus masque l'icône du splash dans un cercle de 192 dp sur une zone de 288 dp.
+  Le logo est donc réduit à 46 % de la zone (132 dp) : ses quatre coins tiennent entièrement
+  dans le cercle, rien n'est rogné et il garde sa forme d'origine.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/linkbridge_icone"
+    android:insetLeft="27%"
+    android:insetTop="27%"
+    android:insetRight="27%"
+    android:insetBottom="27%" />

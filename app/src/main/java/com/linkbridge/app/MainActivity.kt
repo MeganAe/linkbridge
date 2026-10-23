@@ -273,8 +273,6 @@ class MainActivity : ComponentActivity() {
             }
         })
 
-        if (!GuideStore.hasSeen(this)) openGuide()
-
         val saved = SessionStore.load(this)
         if (saved.active && (GatewayService.running || VpnTunnelService.running)) {
             sessionActive = true
@@ -811,7 +809,7 @@ internal fun LinkBridgeMark(modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(R.drawable.linkbridge_icone),
         contentDescription = "LinkBridge",
-        modifier = modifier.clip(CircleShape)
+        modifier = modifier
     )
 }
 
@@ -952,6 +950,7 @@ private fun LinkBridgeApp(
                         title = "Partager Internet",
                         description = "Ce téléphone possède Internet et devient le pont.",
                         buttonText = "Partager",
+                        accent = LinkBridgeBrand.Primary,
                         onClick = onShare
                     )
                     RoleCard(
@@ -959,6 +958,7 @@ private fun LinkBridgeApp(
                         title = "Recevoir Internet",
                         description = "Ce téléphone se connecte au pont sans hotspot classique.",
                         buttonText = "Recevoir",
+                        accent = LinkBridgeBrand.Teal,
                         onClick = onReceive
                     )
                 }
@@ -1044,19 +1044,41 @@ private fun SessionNotice(onStop: () -> Unit) {
 
 @Composable
 private fun HeroCard(role: LinkRole?, status: String) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Ink),
-        shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                androidx.compose.ui.graphics.Brush.linearGradient(
+                    listOf(LinkBridgeBrand.Ink, Color(0xFF3B2FA0), LinkBridgeBrand.Primary)
+                )
+            )
     ) {
-        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Décor : deux pastilles reprises des couleurs du logo.
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 14.dp, end = 14.dp)
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(LinkBridgeBrand.TealLight.copy(alpha = 0.18f))
+        )
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 22.dp, end = 64.dp)
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(LinkBridgeBrand.AmberLight.copy(alpha = 0.35f))
+        )
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LinkBridgeMark(Modifier.size(56.dp))
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(
                         "Un pont, pas un hotspot",
-                        color = LinkBridgeBrand.Primary.copy(alpha = 0.9f),
+                        color = LinkBridgeBrand.TealLight,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1072,12 +1094,18 @@ private fun HeroCard(role: LinkRole?, status: String) {
                     )
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.14f))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (role == null) LinkBridgeBrand.OnSurfaceVariant else LinkBridgeBrand.Accent)
+                        .background(if (role == null) LinkBridgeBrand.AmberLight else LinkBridgeBrand.TealLight)
                 )
                 Spacer(Modifier.width(8.dp))
                 AnimatedContent(
@@ -1088,7 +1116,7 @@ private fun HeroCard(role: LinkRole?, status: String) {
                     },
                     label = "statut"
                 ) { current ->
-                    Text(current, color = Color.White.copy(alpha = 0.9f))
+                    Text(current, color = Color.White.copy(alpha = 0.95f), fontSize = 13.sp)
                 }
             }
         }
@@ -1101,34 +1129,48 @@ private fun RoleCard(
     title: String,
     description: String,
     buttonText: String,
+    accent: Color,
     onClick: () -> Unit
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
-        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.08f)),
+        shape = RoundedCornerShape(22.dp),
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+        border = BorderStroke(1.5.dp, accent.copy(alpha = 0.35f))
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier.size(44.dp).clip(CircleShape).background(LinkBridgeBrand.Primary.copy(alpha = 0.10f)),
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(accent),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(icon, contentDescription = null, tint = LinkBridgeBrand.Primary)
+                    Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
                 }
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LinkBridgeBrand.Ink)
-                    Text(description, style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.OnSurfaceVariant)
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = LinkBridgeBrand.Ink
+                    )
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LinkBridgeBrand.OnSurfaceVariant
+                    )
                 }
             }
             Button(
                 onClick = onClick,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Primary)
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = accent)
             ) {
-                Text(buttonText, color = Color.White)
+                Text(buttonText, color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
     }
