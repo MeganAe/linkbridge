@@ -30,27 +30,10 @@ object LinkBridgeBrand {
     // utilisent encore les anciens noms. Ils seront migrés vers la palette sobre
     // dans une prochaine itération. Ces alias pointent vers les nouvelles couleurs.
     // —————————————————————————————————————————————————————————————
-    @Suppress("DEPRECATION")
-    @Deprecated("Utiliser Primary à la place", level = DeprecationLevel.HIDDEN)
     val Purple = Primary
-
-    @Suppress("DEPRECATION")
-    @Deprecated("Utiliser Accent à la place", level = DeprecationLevel.HIDDEN)
     val Coral = Accent
-
-    @Suppress("DEPRECATION")
-    @Deprecated("Utiliser Primary avec transparence", level = DeprecationLevel.HIDDEN)
     val Mint = Primary.copy(alpha = 0.15f)
-
-    @Suppress("DEPRECATION")
-    @Deprecated("Utiliser Primary avec transparence", level = DeprecationLevel.HIDDEN)
     val Butter = Primary.copy(alpha = 0.08f)
-
-    @Suppress("DEPRECATION")
-    @Deprecated("Utiliser Primary avec transparence", level = DeprecationLevel.HIDDEN)
     val Lavender = Primary.copy(alpha = 0.10f)
-
-    @Suppress("DEPRECATION")
-    @Deprecated("Utiliser Canvas à la place", level = DeprecationLevel.HIDDEN)
     val Background = Canvas
 }

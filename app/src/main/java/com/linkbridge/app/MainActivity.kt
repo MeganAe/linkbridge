@@ -78,6 +78,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -128,6 +129,12 @@ private sealed interface LinkTestState {
     data class Failure(val message: String) : LinkTestState
 }
 
+/** Source de la connexion reçue. */
+private object ConnectionSource {
+    const val DIRECT = "direct"
+    const val MANUAL = "manual"
+}
+
 class MainActivity : ComponentActivity() {
     private var role by mutableStateOf<LinkRole?>(null)
     private var status by mutableStateOf("Prêt à créer un lien")
@@ -136,75 +143,28 @@ class MainActivity : ComponentActivity() {
     private var vpnPrepared = false
     private var pendingPermissionAction: (() -> Unit)? = null
 
-    // A fresh pairing code is generated for every sharing session and is
-    // never persisted on the device.
     private var pairingCode by mutableStateOf(PairingCode.generate())
     private lateinit var wifiDirect: WifiDirectController
 
-    // Connexion manuelle (relais sur le réseau local, ex. un PC) : IP + code.
     private var manualIp by mutableStateOf("")
     private var manualCode by mutableStateOf("")
-
-    // Groupe Wi-Fi Direct (SSID / mot de passe) affiché pour qu'un PC puisse
-    // rejoindre le réseau DIRECT-xx-… depuis ses réglages Wi-Fi.
     private var groupSsid by mutableStateOf<String?>(null)
     private var groupPassphrase by mutableStateOf<String?>(null)
-
-    // Host en attente du consentement VPN avant de démarrer le tunnel.
     private var pendingManual: Pair<String, String>? = null
-
-    // Wi-Fi activé ou non : c'est le prérequis que les nouveaux utilisateurs ignorent, donc
-    // l'écran d'accueil le vérifie et propose d'ouvrir les réglages.
     private var wifiOn by mutableStateOf(true)
-
-    // Localisation activée : sans elle, Wi‑Fi Direct ne trouve rien sur Android 12 et avant.
     private var locationOn by mutableStateOf(true)
-
-    // Fenêtre qui demande d'activer le Wi‑Fi et la localisation. Elle n'apparaît que sur
-    // une action volontaire : Partager ou Recevoir. Jamais à l'ouverture de l'application.
     private var radioPrompt by mutableStateOf(false)
-
-    // Ce que l'utilisateur voulait faire quand la demande d'activation s'est affichée :
-    // Partager ou Recevoir. Dès que les réglages sont bons, l'action reprend toute seule,
-    // au lieu de lui faire tout recommencer depuis le début.
     private var pendingRadioAction: (() -> Unit)? = null
-
-    // Session en cours : permet de retrouver l'écran du partage quand on rouvre
-    // l'application alors que le service tourne toujours en arrière-plan.
     private var sessionActive by mutableStateOf(false)
-
-    // Session née d'un lien Wi‑Fi Direct : les services suivent alors l'état du lien pour
-    // qu'une connexion terminée ne laisse jamais une notification qui annonce le contraire.
     private var sessionFromDirect = false
-
-    // Une invitation est partie et n'a pas encore abouti : garde-fou contre les doublons.
     private var connecting by mutableStateOf(false)
-
-    // Adresse du relais côté téléphone B : gardée pour pouvoir tester la connexion.
     private var receiverHost by mutableStateOf("")
-
-    // Ce téléphone a-t-il un accès Internet réel ? Un partage sans Internet ne sert à rien,
-    // et l'utilisateur ne s'en apercevait qu'une fois tout le reste en place.
     private var internetOk by mutableStateOf(true)
-
-    // Résultat affiché du test de connexion.
     private var linkTest by mutableStateOf<LinkTestState>(LinkTestState.Idle)
-
-    // Android limite-t-il LinkBridge pour économiser la batterie ?
     private var batteryRestricted by mutableStateOf(false)
-
-    // Un lien a réellement été formé.
     private var linkUp = false
-
-    // Relais dont la connexion a été obtenue avant l'autorisation VPN.
     private var pendingHost: String? = null
-
-    // Surveillant : au-delà de trente secondes sans réponse, l'utilisateur est prévenu
-    // au lieu de rester devant un écran qui ne dit rien.
     private var connectWatchdog: Runnable? = null
-
-    // Applications qui passent par la connexion reçue (téléphone B) : toutes,
-    // ou seulement celles que l'utilisateur a cochées.
     private var restrictApps by mutableStateOf(false)
     private var selectedApps by mutableStateOf<Set<String>>(emptySet())
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
@@ -218,10 +178,8 @@ class MainActivity : ComponentActivity() {
             pendingManual = null
             if (manual != null) {
                 status = "VPN autorisé. Connexion au relais ${manual.first}…"
-                startReceiverVpn(manual.first, manual.second, SOURCE_MANUAL)
+                startReceiverVpn(manual.first, manual.second, ConnectionSource.MANUAL)
             } else if (pendingHost != null) {
-                // Le lien Wi‑Fi Direct était déjà formé : le tunnel démarre dès que le code
-                // est saisi, sans que l'utilisateur ait à recommencer la moindre étape.
                 if (pairingInput.length == 6) {
                     tryStartPendingTunnel()
                 } else {
@@ -247,7 +205,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // L'écran de démarrage disparaît dès la première image prête : aucun délai artificiel.
         installSplashScreen()
         super.onCreate(savedInstanceState)
         wifiDirect = WifiDirectController(
@@ -298,23 +255,17 @@ class MainActivity : ComponentActivity() {
         internetOk = internetAvailable()
         batteryRestricted = !batteryExempt()
         locationOn = locationEnabled()
-        // Aucune demande à l'ouverture : l'écran d'accueil explique la préparation, mais
-        // rien ne surgit tout seul au visage de l'utilisateur.
         requestNotificationPermissionIfNeeded()
 
-        // Retour : sur n'importe quel écran de l'application, on revient à l'accueil.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
                     radioPrompt -> radioPrompt = false
                     role == null -> {
-                        // Déjà à l'accueil : on laisse Android fermer l'écran.
                         isEnabled = false
                         onBackPressedDispatcher.onBackPressed()
                     }
                     sessionActive || linkUp -> {
-                        // Un partage tourne : on ne le coupe pas par erreur, on quitte l'écran
-                        // et il continue en arrière-plan avec sa notification.
                         moveTaskToBack(true)
                     }
                     else -> stopEverything()
@@ -322,11 +273,8 @@ class MainActivity : ComponentActivity() {
             }
         })
 
-        // Le guide s'ouvre en pleine page au premier lancement, puis reste accessible par le
-        // bouton Guide de la barre du haut.
         if (!GuideStore.hasSeen(this)) openGuide()
 
-        // Session déjà en cours : l'application a été fermée pendant que le partage tournait.
         val saved = SessionStore.load(this)
         if (saved.active && (GatewayService.running || VpnTunnelService.running)) {
             sessionActive = true
@@ -335,8 +283,6 @@ class MainActivity : ComponentActivity() {
             role = saved.role
             if (saved.code.isNotEmpty()) pairingCode = saved.code
             if (saved.role == LinkRole.RECEIVE) {
-                // Le code saisi et l'adresse du relais reviennent avec l'écran : le test de
-                // connexion reste utilisable après une fermeture de l'application.
                 pairingInput = saved.code
                 receiverHost = saved.host
             }
@@ -346,7 +292,6 @@ class MainActivity : ComponentActivity() {
                 null -> "Session en cours"
             }
         } else if (saved.active) {
-            // Les services se sont arrêtés entre-temps : on ne laisse pas une session fantôme.
             SessionStore.clear(this)
         }
 
@@ -354,8 +299,6 @@ class MainActivity : ComponentActivity() {
         restrictApps = selection.restrict
         selectedApps = selection.packages
         Thread {
-            // La liste se construit hors du fil principal, puis revient sur l'écran : écrire
-            // l'état Compose depuis un autre fil faisait clignoter la liste, parfois sans rien.
             val apps = AppSelectionStore.listLaunchableApps(this)
             runOnUiThread { installedApps = apps }
         }.apply {
@@ -372,8 +315,6 @@ class MainActivity : ComponentActivity() {
                 radioPrompt = radioPrompt,
                 onEnableRadios = ::enableRadios,
                 onDismissRadioPrompt = {
-                    // L'utilisateur a dit « plus tard » : on ne garde rien en attente, et la
-                    // notification disparaît au lieu de le relancer sans cesse.
                     radioPrompt = false
                     pendingRadioAction = null
                     Notifier.cancel(this, Notifier.ID_SETUP)
@@ -423,7 +364,6 @@ class MainActivity : ComponentActivity() {
                 onPairingInputChange = { raw ->
                     val clean = raw.filter { character -> character.isDigit() }.take(6)
                     pairingInput = clean
-                    // Le lien est parfois déjà formé quand le code arrive : on enchaîne.
                     if (clean.length == 6) tryStartPendingTunnel()
                 },
                 onShare = { ensureRadios { runWithNearbyPermissions(::beginSharing) } },
@@ -450,9 +390,6 @@ class MainActivity : ComponentActivity() {
         val host = info.groupOwnerAddress?.hostAddress ?: GatewayService.DEFAULT_GROUP_OWNER_ADDRESS
         connecting = false
         cancelConnectWatchdog()
-        // Une invitation acceptée depuis la notification d'Android arrive ici alors que
-        // l'utilisateur n'a rien choisi dans l'application. C'est le sens réel du lien qui
-        // décide : c'est exactement ce qui manquait, accepter l'invitation ne faisait rien.
         if (role == null) role = if (info.isGroupOwner) LinkRole.SHARE else LinkRole.RECEIVE
         val current = role
         linkUp = true
@@ -475,16 +412,12 @@ class MainActivity : ComponentActivity() {
                 SessionStore.save(this, LinkRole.RECEIVE, pairingInput, host)
                 when {
                     pairingInput.length != 6 -> {
-                        // Le lien est formé, il ne manque que le code : le tunnel partira tout
-                        // seul dès la sixième chiffre, sans nouvel appui.
                         pendingHost = host
                         status =
                             "Lien établi. Entre le code à 6 chiffres affiché sur l'autre appareil."
                     }
 
                     !vpnPrepared -> {
-                        // L'autorisation VPN manque encore : on garde le relais de côté pour
-                        // démarrer le tunnel dès qu'elle arrive, au lieu de ne rien faire.
                         pendingHost = host
                         status = "Lien établi. Autorise le VPN pour terminer la connexion."
                     }
@@ -495,7 +428,7 @@ class MainActivity : ComponentActivity() {
                             this, Notifier.ID_LINK,
                             "Téléphone A connecté", "Démarrage de la connexion Internet reçue."
                         )
-                        startReceiverVpn(host, pairingInput, SOURCE_DIRECT)
+                        startReceiverVpn(host, pairingInput, ConnectionSource.DIRECT)
                     }
                 }
             }
@@ -512,25 +445,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Le lien Wi‑Fi Direct peut être formé avant que tout soit prêt : un code encore vide, ou
-     * l'autorisation VPN. Dès que la dernière pièce arrive, le tunnel démarre tout seul.
-     */
     private fun tryStartPendingTunnel() {
         val host = pendingHost ?: return
         if (!vpnPrepared || pairingInput.length != 6) return
         pendingHost = null
         status = "Téléphone A connecté. Démarrage du tunnel…"
-        startReceiverVpn(host, pairingInput, SOURCE_DIRECT)
+        startReceiverVpn(host, pairingInput, ConnectionSource.DIRECT)
     }
 
-    /** Ouvre le guide, désormais une page complète et non une fenêtre de dialogue. */
     private fun openGuide() {
         GuideStore.markSeen(this)
         startActivity(Intent(this, GuideActivity::class.java))
     }
 
-    /** Sans cette autorisation, la notification du partage reste invisible sur Android 13 et plus. */
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
@@ -566,8 +493,6 @@ class MainActivity : ComponentActivity() {
 
     private fun beginSharing() {
         requestNotificationPermissionIfNeeded()
-        // Le partage sans Internet ne donne rien : mieux vaut le dire tout de suite que
-        // laisser l'autre téléphone attendre une connexion qui ne viendra jamais.
         internetOk = internetAvailable()
         if (!internetOk) {
             Notifier.post(
@@ -623,11 +548,6 @@ class MainActivity : ComponentActivity() {
         AppSelectionStore.save(this, restrictApps, selectedApps)
     }
 
-    /**
-     * Vérifie que le mode « seulement certaines applications » a bien au moins une
-     * application utilisable. Pendant le chargement de la liste, on laisse passer :
-     * le service ignore de lui-même les paquets qui n'existent plus.
-     */
     private fun appSelectionValid(): Boolean {
         if (!restrictApps) return true
         if (installedApps.isEmpty()) return true
@@ -643,8 +563,6 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (!appSelectionValid()) return
-        // Les applications désinstallées depuis le dernier choix sont retirées ici : elles
-        // faisaient échouer la préparation du tunnel, et la connexion ne démarrait jamais.
         val installed = installedApps.map { it.packageName }.toSet()
         val allowed = when {
             !restrictApps -> emptySet()
@@ -666,10 +584,6 @@ class MainActivity : ComponentActivity() {
         else startService(intent)
     }
 
-    /**
-     * Connexion manuelle à un relais sur le réseau local (par exemple le PC
-     * avec LinkBridge), sans Wi-Fi Direct : IP + code suffisent.
-     */
     private fun beginManualReceiving(host: String, code: String) {
         role = LinkRole.RECEIVE
         sessionFromDirect = false
@@ -689,14 +603,10 @@ class MainActivity : ComponentActivity() {
         } else {
             vpnPrepared = true
             status = "Connexion au relais $cleanHost…"
-            startReceiverVpn(cleanHost, code, SOURCE_MANUAL)
+            startReceiverVpn(cleanHost, code, ConnectionSource.MANUAL)
         }
     }
 
-    /**
-     * Le lien a disparu : les services s'arrêtent au lieu de laisser une notification qui
-     * annonce une connexion qui n'existe plus.
-     */
     private fun stopBackgroundSession() {
         stopService(Intent(this, GatewayService::class.java))
         stopService(
@@ -727,8 +637,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runWithNearbyPermissions(action: () -> Unit) {
-        // Android 12 et avant réclame la position précise, et refuse net une demande qui
-        // n'inclut pas aussi la position approximative : les deux sont demandées ensemble.
         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             listOf(Manifest.permission.NEARBY_WIFI_DEVICES)
         } else {
@@ -749,12 +657,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // L'utilisateur a pu activer le Wi-Fi ou la localisation depuis les réglages Android.
         wifiOn = wifiDirect.wifiEnabled()
         locationOn = locationEnabled()
-        // Rien ne s'ouvre ici tout seul : on se contente de constater. La demande n'existe
-        // que si l'utilisateur a appuyé sur Partager ou Recevoir, et c'est là qu'elle est
-        // posée. Le seul geste automatique est la reprise de ce qu'il voulait faire.
         if (wifiOn && (!locationRequired || locationOn)) {
             Notifier.cancel(this, Notifier.ID_SETUP)
             val waiting = pendingRadioAction
@@ -764,11 +668,8 @@ class MainActivity : ComponentActivity() {
                 waiting()
             }
         }
-        // L'utilisateur a pu activer ses données mobiles ou changer le réglage de batterie
-        // pendant qu'il était dans les réglages Android.
         internetOk = internetAvailable()
         batteryRestricted = !batteryExempt()
-        // L'utilisateur revient peut-être de la page des applications : on relit le choix.
         val selection = AppSelectionStore.load(this)
         restrictApps = selection.restrict
         selectedApps = selection.packages
@@ -777,7 +678,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // Retour depuis une autre page (le guide) : on arrive à l'accueil.
         if (intent.getBooleanExtra(EXTRA_GO_HOME, false) && !sessionActive && !linkUp) {
             if (role != null) stopEverything()
         }
@@ -790,12 +690,6 @@ class MainActivity : ComponentActivity() {
         true
     }
 
-    /**
-     * Vrai si un réseau de ce téléphone donne réellement accès à Internet.
-     *
-     * Tous les réseaux sont examinés, et pas seulement le réseau actif : pendant un partage
-     * Wi‑Fi Direct, le réseau actif devient le groupe local, qui n'a évidemment pas Internet.
-     */
     private fun internetAvailable(): Boolean = try {
         val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         manager.allNetworks.any { network ->
@@ -804,11 +698,9 @@ class MainActivity : ComponentActivity() {
                 caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         }
     } catch (_: Throwable) {
-        // Impossible à savoir : on préfère ne pas inquiéter l'utilisateur à tort.
         true
     }
 
-    /** Vrai si Android laisse LinkBridge tourner sans restriction d'économie de batterie. */
     private fun batteryExempt(): Boolean = try {
         val power = getSystemService(Context.POWER_SERVICE) as PowerManager
         power.isIgnoringBatteryOptimizations(packageName)
@@ -816,7 +708,6 @@ class MainActivity : ComponentActivity() {
         true
     }
 
-    /** Ouvre la liste Android où LinkBridge peut être exempté de l'économie de batterie. */
     private fun openBatterySettings() {
         try {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
@@ -825,14 +716,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Teste réellement la connexion reçue.
-     *
-     * Le téléphone se connecte au relais du téléphone A, s'authentifie avec le code, et
-     * demande une page minuscule à travers lui. C'est la seule façon de savoir si Internet
-     * passe, au lieu de croire l'écran sur parole : jusqu'ici, « connecté » ne voulait rien
-     * dire de plus que « le lien Wi‑Fi Direct existe ».
-     */
     private fun runConnectionTest() {
         val host = receiverHost
         val code = pairingInput
@@ -866,7 +749,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Lance l'action si le Wi‑Fi et la localisation sont actifs, sinon les demande. */
     private fun ensureRadios(action: () -> Unit) {
         wifiOn = wifiDirect.wifiEnabled()
         locationOn = locationEnabled()
@@ -874,7 +756,6 @@ class MainActivity : ComponentActivity() {
             radioPrompt = false
             action()
         } else {
-            // Seule façon d'arriver ici : un appui sur Partager ou sur Recevoir.
             pendingRadioAction = action
             radioPrompt = true
             Notifier.post(
@@ -891,13 +772,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Ouvre directement le bon réglage : le Wi‑Fi d'abord, puis la localisation. */
     private fun enableRadios() {
         radioPrompt = false
         try {
             if (!wifiOn) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    // Panneau flottant avec l'interrupteur Wi‑Fi : un seul appui suffit.
                     startActivity(Intent(Settings.Panel.ACTION_WIFI))
                 } else {
                     startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
@@ -910,7 +789,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Ouvre la page Wi-Fi des réglages Android, pour que le prérequis soit à un appui. */
     private fun openWifiSettings() {
         try {
             startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
@@ -925,34 +803,16 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class LinkRole { SHARE, RECEIVE }
-
-private const val SOURCE_DIRECT = "direct"
-private const val SOURCE_MANUAL = "manual"
-
 /**
- * Construit le graphique de la marque : deux piliers qui deviennent un chemin.
- * Dessiné en Compose pour éviter toute dépendance à une ressource bitmap.
+ * Construit le graphique de la marque avec l'icône PNG fournie par l'utilisateur.
  */
 @Composable
 private fun LinkBridgeMark(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(LinkBridgeBrand.Ink),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(10.dp).clip(CircleShape).background(LinkBridgeBrand.Accent)
-            )
-            Spacer(Modifier.width(4.dp))
-            Box(
-                Modifier.size(10.dp).clip(CircleShape).background(Color.White)
-            )
-        }
-    }
+    Image(
+        painter = painterResource(R.drawable.linkbridge_icone),
+        contentDescription = "LinkBridge",
+        modifier = modifier.clip(CircleShape)
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1156,10 +1016,6 @@ private fun LinkBridgeApp(
     }
 }
 
-/**
- * Rappel discret pendant une session : le travail continue hors de l'écran, et il ne
- * s'arrête que sur une demande explicite.
- */
 @Composable
 private fun SessionNotice(onStop: () -> Unit) {
     Row(
@@ -1251,7 +1107,7 @@ private fun RoleCard(
         colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+        border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1288,7 +1144,7 @@ private fun PreparationCard(
         colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+        border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1342,7 +1198,7 @@ private fun SharePanel(
             colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth(),
-            border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+            border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Entre ce code sur le téléphone B", style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.OnSurfaceVariant)
@@ -1366,7 +1222,7 @@ private fun SharePanel(
                 colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+                border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
@@ -1582,13 +1438,6 @@ private fun ReceivePanel(
     }
 }
 
-/**
- * Prévient que le partage n'a rien à distribuer.
- *
- * C'était la panne la plus déroutante : un lien parfaitement formé, un écran qui annonce
- * « connecté » des deux côtés, et rien qui passe, parce que les données mobiles du téléphone
- * qui partage étaient coupées.
- */
 @Composable
 private fun InternetNotice(internetOk: Boolean, onRecheck: () -> Unit) {
     if (internetOk) return
@@ -1620,12 +1469,6 @@ private fun InternetNotice(internetOk: Boolean, onRecheck: () -> Unit) {
     }
 }
 
-/**
- * Rappelle qu'Android peut couper un service de premier plan pour économiser la batterie.
- *
- * C'est la cause des partages qui « tiennent dix minutes puis lâchent » : le système arrête
- * le service, la notification disparaît, et rien n'explique pourquoi.
- */
 @Composable
 private fun BatteryNotice(onOpenSettings: () -> Unit) {
     Card(
@@ -1660,12 +1503,6 @@ private fun BatteryNotice(onOpenSettings: () -> Unit) {
     }
 }
 
-/**
- * Test de connexion : le seul endroit de l'application qui dit si Internet passe vraiment.
- *
- * « Connecté » ne voulait dire que « le lien Wi‑Fi Direct existe ». Ce bouton va plus loin :
- * il interroge le relais avec le code, puis demande une page minuscule à travers lui.
- */
 @Composable
 private fun LinkTestCard(state: LinkTestState, onTest: () -> Unit) {
     OutlinedCard(
@@ -1742,7 +1579,7 @@ private fun TrustPanel() {
         colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.15f))
+        border = border(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.15f))
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Outlined.Security, contentDescription = null, tint = LinkBridgeBrand.Primary)
@@ -1757,15 +1594,6 @@ private fun TrustPanel() {
             }
         }
     }
-}
-
-@Composable
-internal fun LinkBridgeMark(modifier: Modifier = Modifier) {
-    Image(
-        painter = painterResource(R.drawable.linkbridge_icone),
-        contentDescription = "LinkBridge",
-        modifier = modifier.clip(CircleShape)
-    )
 }
 
 @Composable
