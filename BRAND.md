@@ -59,4 +59,6 @@ The product uses Material 3 principles with a restrained, professional look:
 - explicit VPN and nearby-device consent;
 - no decorative AI artwork, no flashy colors.
 
-The source logo is hand-authored vector artwork in `branding/linkbridge-mark.svg`. The Android launcher artwork is in `app/src/main/res/drawable/ic_linkbridge.xml` and `ic_launcher_foreground.xml`. The new PNG icon provided by the user is in `uploads/linkbridge-icone.png`.
+The source logo is your PNG icon, placed in `branding/linkbridge-icone.png`.
+The Android launcher artwork uses the same PNG in `app/src/main/res/mipmap-*/ic_launcher*.png`.
+No AI-generated artwork is used anywhere.

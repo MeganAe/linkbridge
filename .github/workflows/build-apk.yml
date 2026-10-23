@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Récupérer le code
@@ -49,3 +49,21 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publier une release GitHub
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: LinkBridge v${{ github.run_number }}
+          body: |
+            Build automatique depuis GitHub Actions (déclenché manuellement).
+
+            - Tests unitaires : passés
+            - APK debug compilé et prêt à tester
+            - À installer sur deux téléphones pour vérifier le partage Internet par Wi‑Fi Direct
+          files: app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
