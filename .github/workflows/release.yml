@@ -1,0 +1,188 @@
+name: Release LinkBridge
+
+# Un seul workflow : il compile l'APK Android et l'installateur Windows (.exe), puis publie
+# les deux dans une GitHub Release portant le tag de la version.
+#
+#  - Pousser un tag  : git tag v0.5.1 && git push origin v0.5.1
+#  - Ou bouton « Run workflow » (onglet Actions) avec le numéro de version : le tag est créé
+#    automatiquement sur le commit choisi.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à publier, sans le v (ex. 0.5.1)"
+        required: true
+        default: "0.5.1"
+  # Valide la compilation sur chaque PR, sans rien publier.
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  android:
+    name: APK Android
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Déterminer la version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            V="${{ github.event.inputs.version }}"
+            V="${V#v}"
+          else
+            V="0.0.0"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Décalage de 100 : le code de version doit rester supérieur à celui déjà installé.
+          echo "code=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer le SDK Android
+        uses: android-actions/setup-android@v4
+
+      - name: Accepter les licences Android
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Installer les composants Android
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Installer Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Tests du module core
+        run: gradle --no-daemon --max-workers=2 :core:test
+
+      - name: Compiler l'APK
+        env:
+          ORG_GRADLE_PROJECT_appVersion: ${{ steps.version.outputs.version }}
+          ORG_GRADLE_PROJECT_appVersionCode: ${{ steps.version.outputs.code }}
+        run: gradle --no-daemon --max-workers=2 :app:assembleDebug
+
+      - name: Renommer l'APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/LinkBridge-${{ steps.version.outputs.version }}.apk"
+
+      - name: Garder l'APK en artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinkBridge-apk
+          path: dist/LinkBridge-${{ steps.version.outputs.version }}.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Installateur Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Déterminer la version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            V="${{ github.event.inputs.version }}"
+            V="${V#v}"
+          else
+            V="0.0.0"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      # La version passe par variable d'environnement : sur Windows, la ligne de commande
+      # coupait -PappVersion=0.3.0 en deux arguments et cassait la configuration jpackage.
+      - name: Construire l'app-image avec jpackage
+        env:
+          ORG_GRADLE_PROJECT_appVersion: ${{ steps.version.outputs.version }}
+        run: gradle --no-daemon --max-workers=2 :desktop:createDistributable
+
+      - name: Installer Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compiler l'installateur
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe introuvable après installation de Inno Setup" }
+          & $iscc "/DAppVersion=$env:APP_VERSION" installer\linkbridge.iss
+          if ($LASTEXITCODE -ne 0) { throw "La compilation de l'installateur a échoué" }
+
+      - name: Garder l'installateur en artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinkBridge-exe
+          path: dist/LinkBridge-Setup-${{ steps.version.outputs.version }}.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publier la release
+    needs: [android, windows]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Récupérer les fichiers construits
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Lister les fichiers
+        run: ls -la dist
+
+      - name: Créer la release avec son tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.android.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: LinkBridge v${{ needs.android.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/LinkBridge-${{ needs.android.outputs.version }}.apk
+            dist/LinkBridge-Setup-${{ needs.android.outputs.version }}.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

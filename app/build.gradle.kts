@@ -13,8 +13,10 @@ android {
         applicationId = "com.linkbridge.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.5.1"
+        // Forcés par la CI (release.yml) : versionName vient du tag, versionCode augmente à
+        // chaque exécution pour qu'Android accepte la mise à jour par-dessus l'ancienne.
+        versionCode = providers.gradleProperty("appVersionCode").getOrElse("7").toInt()
+        versionName = providers.gradleProperty("appVersion").getOrElse("0.5.1")
     }
 
     signingConfigs {
