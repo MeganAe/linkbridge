@@ -807,7 +807,7 @@ class MainActivity : ComponentActivity() {
  * Construit le graphique de la marque avec l'icône PNG fournie par l'utilisateur.
  */
 @Composable
-private fun LinkBridgeMark(modifier: Modifier = Modifier) {
+internal fun LinkBridgeMark(modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(R.drawable.linkbridge_icone),
         contentDescription = "LinkBridge",
