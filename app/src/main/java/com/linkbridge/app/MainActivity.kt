@@ -32,9 +32,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1107,7 +1107,7 @@ private fun RoleCard(
         colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth(),
-        border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+        border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1135,52 +1135,6 @@ private fun RoleCard(
 }
 
 @Composable
-private fun PreparationCard(
-    wifiOn: Boolean,
-    onOpenWifiSettings: () -> Unit,
-    onOpenGuide: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth(),
-        border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Info, contentDescription = null, tint = LinkBridgeBrand.Primary)
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text(
-                        if (wifiOn) "Prêt à créer un lien" else "Active le Wi‑Fi",
-                        fontWeight = FontWeight.Bold,
-                        color = LinkBridgeBrand.Ink
-                    )
-                    Text(
-                        if (wifiOn) "Le Wi‑Fi est actif. Tu peux partager ou recevoir une connexion."
-                        else "Le Wi‑Fi doit être actif pour que LinkBridge trouve l'autre téléphone.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LinkBridgeBrand.OnSurfaceVariant
-                    )
-                }
-            }
-            if (!wifiOn) {
-                Button(
-                    onClick = onOpenWifiSettings,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = LinkBridgeBrand.Primary)
-                ) {
-                    Text("Activer le Wi‑Fi", color = Color.White)
-                }
-            }
-            TextButton(onClick = onOpenGuide) {
-                Text("Voir le guide", color = LinkBridgeBrand.Primary)
-            }
-        }
-    }
-}
-
-@Composable
 private fun SharePanel(
     pairingCode: String,
     groupSsid: String?,
@@ -1198,7 +1152,7 @@ private fun SharePanel(
             colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth(),
-            border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+            border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Entre ce code sur le téléphone B", style = MaterialTheme.typography.bodyMedium, color = LinkBridgeBrand.OnSurfaceVariant)
@@ -1222,7 +1176,7 @@ private fun SharePanel(
                 colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth(),
-                border = border(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
+                border = BorderStroke(1.5.dp, LinkBridgeBrand.Primary.copy(alpha = 0.25f))
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
@@ -1252,10 +1206,8 @@ private fun SharePanel(
         OutlinedButton(
             onClick = onStop,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = LinkBridgeBrand.Ink,
-                borderColor = LinkBridgeBrand.OnSurfaceVariant.copy(alpha = 0.5f)
-            )
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = LinkBridgeBrand.Ink),
+            border = BorderStroke(1.dp, LinkBridgeBrand.OnSurfaceVariant.copy(alpha = 0.5f))
         ) {
             Icon(Icons.Outlined.StopCircle, null, tint = LinkBridgeBrand.Ink)
             Spacer(Modifier.width(8.dp))
@@ -1313,10 +1265,8 @@ private fun ReceivePanel(
                     OutlinedButton(
                         onClick = onChooseApps,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = LinkBridgeBrand.Primary,
-                            borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
-                        )
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = LinkBridgeBrand.Primary),
+                        border = BorderStroke(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.5f))
                     ) {
                         Text(
                             when {
@@ -1430,10 +1380,8 @@ private fun ReceivePanel(
         OutlinedButton(
             onClick = onStop,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = LinkBridgeBrand.Ink,
-                borderColor = LinkBridgeBrand.OnSurfaceVariant.copy(alpha = 0.5f)
-            )
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = LinkBridgeBrand.Ink),
+            border = BorderStroke(1.dp, LinkBridgeBrand.OnSurfaceVariant.copy(alpha = 0.5f))
         ) { Text("Annuler") }
     }
 }
@@ -1460,10 +1408,8 @@ private fun InternetNotice(internetOk: Boolean, onRecheck: () -> Unit) {
             )
             OutlinedButton(
                 onClick = onRecheck,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = LinkBridgeBrand.Primary,
-                    borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
-                )
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = LinkBridgeBrand.Primary),
+                border = BorderStroke(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.5f))
             ) { Text("Revérifier") }
         }
     }
@@ -1494,10 +1440,8 @@ private fun BatteryNotice(onOpenSettings: () -> Unit) {
             )
             OutlinedButton(
                 onClick = onOpenSettings,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = LinkBridgeBrand.Primary,
-                    borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
-                )
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = LinkBridgeBrand.Primary),
+                border = BorderStroke(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.5f))
             ) { Text("Ouvrir les réglages") }
         }
     }
@@ -1556,10 +1500,8 @@ private fun LinkTestCard(state: LinkTestState, onTest: () -> Unit) {
                 onClick = onTest,
                 enabled = state !is LinkTestState.Running,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = LinkBridgeBrand.Primary,
-                    borderColor = LinkBridgeBrand.Primary.copy(alpha = 0.5f)
-                )
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = LinkBridgeBrand.Primary),
+                border = BorderStroke(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.5f))
             ) {
                 Text(
                     when (state) {
@@ -1579,7 +1521,7 @@ private fun TrustPanel() {
         colors = CardDefaults.cardColors(containerColor = LinkBridgeBrand.Canvas),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth(),
-        border = border(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.15f))
+        border = BorderStroke(1.dp, LinkBridgeBrand.Primary.copy(alpha = 0.15f))
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Outlined.Security, contentDescription = null, tint = LinkBridgeBrand.Primary)
